@@ -1,165 +1,68 @@
 import { saveBudget } from '@/lib/actions';
-import { getCurrentBudget, getPrimaryGoal, getProfile } from '@/lib/data';
-import {
-  disposableIncome,
-  money,
-  recommendedBudget,
-} from '@/lib/calculations';
-import { DEFAULT_BUDGET_PCT } from '@/lib/constants';
+import { getProfile } from '@/lib/data';
+import { guardrailsForIncome, money } from '@/lib/calculations';
+import { GUARDRAIL_CEILING_PCT, GUARDRAIL_SAFE_PCT } from '@/lib/constants';
 import { BudgetPreview } from './BudgetPreview';
 
 export default async function BudgetPage() {
-  const [profile, budget, goal] = await Promise.all([
-    getProfile(),
-    getCurrentBudget(),
-    getPrimaryGoal(),
-  ]);
-
-  const annualIncome = profile?.annual_income ?? 0;
-  const monthlyExpenses = profile?.monthly_expenses ?? 0;
-  const hourlyWage = profile?.hourly_wage ?? 25;
-  const pct = budget?.budget_pct ?? DEFAULT_BUDGET_PCT;
-  const maxBudget = budget?.max_budget ?? null;
-  const savingsTarget = goal?.target_amount ?? 0;
-
-  const disposable = disposableIncome(annualIncome, monthlyExpenses);
-  const recommended = recommendedBudget(disposable, pct, maxBudget);
+  const profile = await getProfile();
+  const monthlyIncome = profile?.monthly_income ?? 0;
+  const g = guardrailsForIncome(monthlyIncome);
 
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-bold">Your monthly plan</h1>
+        <h1 className="text-2xl font-bold">Set your guardrails</h1>
         <p className="muted mt-1">
-          We&apos;re not asking you to quit cold turkey. We&apos;ll set a small,
-          deliberate limit and make every dollar visible.
+          One question. Tell us what you earn in a typical month and we&apos;ll
+          show you a safe limit — and a hard line you don&apos;t want to cross.
         </p>
       </div>
 
-      {budget && (
+      {monthlyIncome > 0 && (
         <div className="card-tight">
-          <p className="muted">Current recommended allowance</p>
-          <p className="stat text-brand-400">{money(recommended)}</p>
+          <p className="muted">Your safe monthly limit</p>
+          <p className="stat text-brand-400">{money(g.safeLimit)}</p>
           <p className="muted mt-1">
-            {pct}% of {money(disposable)} disposable income
-            {maxBudget != null ? `, capped at ${money(maxBudget)}` : ''}
+            Hard ceiling {money(g.ceiling)} — past this, gambling is taking from
+            things that matter.
           </p>
         </div>
       )}
 
       <form action={saveBudget} className="card space-y-4">
         <div>
-          <label className="label" htmlFor="annual_income">
-            Annual income (before tax)
+          <label className="label" htmlFor="monthly_income">
+            How much do you earn each month? (take-home)
           </label>
           <input
-            id="annual_income"
-            name="annual_income"
-            type="number"
-            inputMode="decimal"
-            min="0"
-            step="100"
-            defaultValue={annualIncome || ''}
-            placeholder="78000"
-            className="input"
-            required
-          />
-        </div>
-
-        <div>
-          <label className="label" htmlFor="monthly_expenses">
-            Monthly expenses
-          </label>
-          <input
-            id="monthly_expenses"
-            name="monthly_expenses"
+            id="monthly_income"
+            name="monthly_income"
             type="number"
             inputMode="decimal"
             min="0"
             step="50"
-            defaultValue={monthlyExpenses || ''}
-            placeholder="4200"
+            defaultValue={monthlyIncome || ''}
+            placeholder="5000"
             className="input"
             required
+            autoFocus
           />
+          <p className="muted mt-1">
+            Roughly what lands in your account each month, after tax.
+          </p>
         </div>
 
-        <div>
-          <label className="label" htmlFor="savings_target">
-            Savings goal (target amount)
-          </label>
-          <input
-            id="savings_target"
-            name="savings_target"
-            type="number"
-            inputMode="decimal"
-            min="0"
-            step="100"
-            defaultValue={savingsTarget || ''}
-            placeholder="8000"
-            className="input"
-          />
-        </div>
+        <BudgetPreview defaultIncome={monthlyIncome} />
 
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="label" htmlFor="budget_pct">
-              Budget % of disposable
-            </label>
-            <input
-              id="budget_pct"
-              name="budget_pct"
-              type="number"
-              inputMode="decimal"
-              min="0"
-              max="100"
-              step="0.5"
-              defaultValue={pct}
-              className="input"
-            />
-          </div>
-          <div>
-            <label className="label" htmlFor="max_budget">
-              Hard cap (optional)
-            </label>
-            <input
-              id="max_budget"
-              name="max_budget"
-              type="number"
-              inputMode="decimal"
-              min="0"
-              step="5"
-              defaultValue={maxBudget ?? ''}
-              placeholder="25"
-              className="input"
-            />
-          </div>
-        </div>
-
-        <div>
-          <label className="label" htmlFor="hourly_wage">
-            Your hourly wage (to show hours worked)
-          </label>
-          <input
-            id="hourly_wage"
-            name="hourly_wage"
-            type="number"
-            inputMode="decimal"
-            min="0"
-            step="0.5"
-            defaultValue={hourlyWage}
-            className="input"
-          />
-        </div>
-
-        <BudgetPreview
-          defaultIncome={annualIncome}
-          defaultExpenses={monthlyExpenses}
-          defaultPct={pct}
-          defaultCap={maxBudget}
-        />
-
-        <button className="btn-primary w-full py-3.5">Save my plan</button>
+        <button className="btn-primary w-full py-3.5">Save my guardrails</button>
       </form>
+
+      <p className="muted text-center text-xs">
+        Your safe limit is {GUARDRAIL_SAFE_PCT}% of your income; the hard ceiling
+        is {GUARDRAIL_CEILING_PCT}%. Lower is always better — anything you
+        don&apos;t spend stays yours.
+      </p>
     </div>
   );
 }

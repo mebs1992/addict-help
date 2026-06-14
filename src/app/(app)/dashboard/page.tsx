@@ -10,10 +10,11 @@ import {
   getStreak,
 } from '@/lib/data';
 import {
+  guardrailsForIncome,
   money,
   monthKey,
   opportunityBreakdown,
-  percentOverBudget,
+  spendZone,
   sum,
 } from '@/lib/calculations';
 import { Banner, LinkCard, ProgressBar, StatCard } from '@/components/ui';
@@ -32,27 +33,36 @@ export default async function DashboardPage() {
 
   const now = new Date();
   const thisMonth = monthKey(now);
-  const thisYear = now.getFullYear();
 
   const monthSpent = sum(
     sessions
       .filter((s) => monthKey(new Date(s.gambled_at)) === thisMonth)
       .map((s) => Number(s.amount)),
   );
-  const yearSpent = sum(
-    sessions
-      .filter((s) => new Date(s.gambled_at).getFullYear() === thisYear)
-      .map((s) => Number(s.amount)),
-  );
   const lifetime = sum(sessions.map((s) => Number(s.amount)));
 
-  const allowance = budget?.recommended_budget ?? 0;
-  const usedPct = allowance > 0 ? (monthSpent / allowance) * 100 : monthSpent > 0 ? 100 : 0;
-  const overBudget = allowance > 0 && monthSpent > allowance;
-  const overPct = percentOverBudget(monthSpent, allowance);
-  const needsAck = overBudget && budget && !budget.acknowledged_over;
+  const g = guardrailsForIncome(profile?.monthly_income ?? 0);
+  const hasGuardrails = g.monthlyIncome > 0;
+  const zone = spendZone(monthSpent, g);
+  const usedPct = g.ceiling > 0 ? (monthSpent / g.ceiling) * 100 : 0;
+  const safeMarkerPct = g.ceiling > 0 ? (g.safeLimit / g.ceiling) * 100 : 0;
+  const tone: 'danger' | 'warn' | 'brand' =
+    zone === 'danger' ? 'danger' : zone === 'caution' ? 'warn' : 'brand';
+  const toneText =
+    zone === 'danger'
+      ? 'text-danger-400'
+      : zone === 'caution'
+        ? 'text-warn-400'
+        : 'text-brand-400';
+  const tonePill =
+    zone === 'danger'
+      ? 'bg-danger-500/20 text-danger-400'
+      : zone === 'caution'
+        ? 'bg-warn-500/20 text-warn-400'
+        : 'bg-brand-500/20 text-brand-400';
+  const needsAck = zone === 'danger' && budget && !budget.acknowledged_over;
 
-  const opp = opportunityBreakdown(yearSpent);
+  const opp = opportunityBreakdown(lifetime);
   const reasons = accountability
     .filter((e) => e.entry_type === 'reason')
     .map((e) => e.content)
@@ -67,11 +77,11 @@ export default async function DashboardPage() {
         <h1 className="text-2xl font-bold">{firstName} 👋</h1>
       </div>
 
-      {/* No budget yet -> prompt setup (Feature 1) */}
-      {!budget && (
+      {/* No income set yet -> prompt the one-question setup */}
+      {!hasGuardrails && (
         <Banner tone="warn">
           <div className="flex items-center justify-between gap-3">
-            <span>Set up your monthly plan to see your allowance.</span>
+            <span>Tell us your monthly income to unlock your safe limit.</span>
             <Link href="/budget" className="btn-ghost shrink-0 py-1.5">
               Set up
             </Link>
@@ -79,54 +89,67 @@ export default async function DashboardPage() {
         </Banner>
       )}
 
-      {/* Over-budget acknowledgement (Feature 1) */}
+      {/* Crossed the hard ceiling -> acknowledge honestly */}
       {needsAck && (
         <div className="rounded-2xl border-2 border-danger-500 bg-danger-500/15 p-5">
           <p className="text-lg font-bold text-danger-400">
-            You&apos;ve gone over your plan.
+            You&apos;ve crossed your hard ceiling.
           </p>
           <p className="mt-1 text-sm text-slate-200">
-            You set a limit of {money(allowance)} and have spent{' '}
-            {money(monthSpent)} — that&apos;s {Math.round(overPct)}% over. This
-            isn&apos;t a verdict on you. Acknowledge it honestly and keep going.
+            Your ceiling is {money(g.ceiling)} and you&apos;ve spent{' '}
+            {money(monthSpent)} this month. This isn&apos;t a verdict on you.
+            Acknowledge it honestly and keep going.
           </p>
           <form action={acknowledgeOverBudget} className="mt-3">
             <button className="btn-danger w-full">
-              I acknowledge I exceeded my planned limit
+              I acknowledge I crossed my hard ceiling
             </button>
           </form>
         </div>
       )}
 
-      {/* Budget meter (Feature 1) */}
-      {budget && (
+      {/* Guardrail meter — where this month's spend sits in the zones */}
+      {hasGuardrails && (
         <div
-          className={`card ${overBudget ? 'border-danger-500/50 bg-danger-500/5' : ''}`}
+          className={`card ${zone === 'danger' ? 'border-danger-500/50 bg-danger-500/5' : ''}`}
         >
           <div className="flex items-end justify-between">
             <div>
-              <p className="muted">This month&apos;s allowance</p>
+              <p className="muted">Spent this month</p>
               <p className="text-2xl font-bold">
-                <span className={overBudget ? 'text-danger-400' : 'text-slate-100'}>
-                  {money(monthSpent)}
-                </span>{' '}
-                <span className="text-slate-500">/ {money(allowance)}</span>
+                <span className={toneText}>{money(monthSpent)}</span>{' '}
+                <span className="text-slate-500">
+                  / {money(g.safeLimit)} safe
+                </span>
               </p>
             </div>
-            <span
-              className={`pill ${overBudget ? 'bg-danger-500/20 text-danger-400' : 'bg-brand-500/20 text-brand-400'}`}
-            >
-              {overBudget
-                ? `${Math.round(overPct)}% over`
-                : `${money(Math.max(0, allowance - monthSpent))} left`}
+            <span className={`pill ${tonePill}`}>
+              {zone === 'safe'
+                ? `${money(Math.max(0, g.safeLimit - monthSpent))} left`
+                : zone === 'caution'
+                  ? 'Over safe limit'
+                  : 'Past your ceiling'}
             </span>
           </div>
-          <div className="mt-3">
-            <ProgressBar pct={usedPct} tone={overBudget ? 'danger' : usedPct > 80 ? 'warn' : 'brand'} />
+          <div className="relative mt-3">
+            <ProgressBar pct={usedPct} tone={tone} />
+            {/* marker for the safe limit on the way to the ceiling */}
+            <div
+              className="absolute top-1/2 h-4 w-0.5 -translate-y-1/2 bg-white/60"
+              style={{ left: `${Math.min(100, safeMarkerPct)}%` }}
+              aria-hidden
+            />
+          </div>
+          <div className="muted mt-2 flex justify-between">
+            <span>Safe {money(g.safeLimit)}</span>
+            <span>Ceiling {money(g.ceiling)}</span>
           </div>
           <p className="muted mt-2">
-            You have used {money(monthSpent)} of your {money(allowance)} monthly
-            allowance.
+            {zone === 'safe'
+              ? "You're in the green. Keep it here."
+              : zone === 'caution'
+                ? "You're over your safe limit — ease off before the ceiling."
+                : "You've gone past what you can afford this month."}
           </p>
         </div>
       )}
@@ -155,14 +178,14 @@ export default async function DashboardPage() {
         </Link>
       )}
 
-      {/* Reality check snapshot (Feature 11) */}
+      {/* Snapshot stats */}
       <div className="grid grid-cols-2 gap-3">
         <StatCard
-          label="This year"
-          value={money(yearSpent)}
-          sub="gambled so far"
-          tone="danger"
-          icon="📉"
+          label="Safe monthly limit"
+          value={hasGuardrails ? money(g.safeLimit) : '—'}
+          sub={hasGuardrails ? 'what you can afford' : 'set your income'}
+          tone="brand"
+          icon="🛟"
         />
         <StatCard
           label="Reward vault"
@@ -190,7 +213,7 @@ export default async function DashboardPage() {
       {/* Opportunity cost (Feature 3) */}
       {opp.length > 0 && (
         <div className="card">
-          <p className="muted">You&apos;ve spent enough this year to buy:</p>
+          <p className="muted">You&apos;ve spent enough to buy:</p>
           <ul className="mt-3 space-y-2">
             {opp.map((item) => (
               <li key={item.label} className="flex items-center gap-3">
@@ -232,7 +255,7 @@ export default async function DashboardPage() {
         <LinkCard href="/streak" emoji="🔥" title="Streak & Achievements" desc="Your milestones" />
         <LinkCard href="/accountability" emoji="🧱" title="Accountability Wall" desc="Your reasons, in your words" />
         <LinkCard href="/reports" emoji="📊" title="Monthly Report" desc="Trends and compliance" />
-        <LinkCard href="/budget" emoji="🎯" title="Budget Plan" desc="Income, expenses, allowance" />
+        <LinkCard href="/budget" emoji="🎯" title="Your Guardrails" desc="Income and safe limit" />
       </div>
     </div>
   );

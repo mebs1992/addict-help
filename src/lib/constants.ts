@@ -1,7 +1,11 @@
 import type { ConsequenceCategory, MoodValue } from './types';
 
-// Default share of disposable income suggested as a (small) gambling budget.
-export const DEFAULT_BUDGET_PCT = 1; // 1%
+// Tiered monthly spending guardrails, as a % of monthly (take-home) income.
+// Spend at or below the safe limit is "green"; above the ceiling is clearly
+// harmful ("red"); in between is "caution". The whole budget setup is derived
+// from these two numbers and the person's monthly income.
+export const GUARDRAIL_SAFE_PCT = 1; // green ceiling — a low-risk limit
+export const GUARDRAIL_CEILING_PCT = 3; // red ceiling — clear harm above this
 
 // Fallback hourly wage used when a user hasn't set income details yet.
 export const DEFAULT_HOURLY_WAGE = 25;

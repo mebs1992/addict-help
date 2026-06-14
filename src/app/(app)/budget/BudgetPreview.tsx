@@ -1,67 +1,65 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import {
-  disposableIncome,
-  money,
-  recommendedBudget,
-} from '@/lib/calculations';
+import { guardrailsForIncome, money } from '@/lib/calculations';
 
 /**
- * Live preview of the recommended allowance. Reads sibling fields from the
- * enclosing <form> so the user sees the number update as they type.
+ * Live preview of the tiered guardrails. Reads the monthly-income field from
+ * the enclosing <form> so the safe limit and hard ceiling update as you type.
  */
-export function BudgetPreview({
-  defaultIncome,
-  defaultExpenses,
-  defaultPct,
-  defaultCap,
-}: {
-  defaultIncome: number;
-  defaultExpenses: number;
-  defaultPct: number;
-  defaultCap: number | null;
-}) {
+export function BudgetPreview({ defaultIncome }: { defaultIncome: number }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [state, setState] = useState(() => {
-    const disp = disposableIncome(defaultIncome, defaultExpenses);
-    return {
-      disposable: disp,
-      recommended: recommendedBudget(disp, defaultPct, defaultCap),
-    };
-  });
+  const [income, setIncome] = useState(defaultIncome);
 
   useEffect(() => {
     const form = ref.current?.closest('form');
     if (!form) return;
     const recompute = () => {
-      const get = (n: string) =>
-        parseFloat(
-          (form.elements.namedItem(n) as HTMLInputElement)?.value || '0',
-        ) || 0;
-      const capRaw = (form.elements.namedItem('max_budget') as HTMLInputElement)
+      const raw = (form.elements.namedItem('monthly_income') as HTMLInputElement)
         ?.value;
-      const cap = capRaw && capRaw.trim() !== '' ? parseFloat(capRaw) : null;
-      const disp = disposableIncome(get('annual_income'), get('monthly_expenses'));
-      setState({
-        disposable: disp,
-        recommended: recommendedBudget(disp, get('budget_pct'), cap),
-      });
+      setIncome(parseFloat(raw || '0') || 0);
     };
     form.addEventListener('input', recompute);
     return () => form.removeEventListener('input', recompute);
   }, []);
 
+  const g = guardrailsForIncome(income);
+
   return (
     <div
       ref={ref}
-      className="rounded-xl border border-brand-500/30 bg-brand-500/10 p-4"
+      className="space-y-3 rounded-xl border border-white/10 bg-white/5 p-4"
     >
-      <p className="muted">Recommended monthly gambling allowance</p>
-      <p className="stat text-brand-400">{money(state.recommended)}</p>
-      <p className="muted mt-1">
-        Disposable income {money(state.disposable)}/mo. A small, deliberate
-        limit — anything you don&apos;t spend goes toward your goals.
+      <div className="flex items-center justify-between">
+        <span className="flex items-center gap-2 text-sm font-medium text-brand-400">
+          <span className="h-2.5 w-2.5 rounded-full bg-brand-500" />
+          Safe limit
+        </span>
+        <span className="font-semibold text-brand-400">
+          {money(g.safeLimit)}/mo
+        </span>
+      </div>
+      <div className="flex items-center justify-between">
+        <span className="flex items-center gap-2 text-sm font-medium text-warn-400">
+          <span className="h-2.5 w-2.5 rounded-full bg-warn-500" />
+          Caution above
+        </span>
+        <span className="font-semibold text-warn-400">
+          {money(g.safeLimit)}
+        </span>
+      </div>
+      <div className="flex items-center justify-between">
+        <span className="flex items-center gap-2 text-sm font-medium text-danger-400">
+          <span className="h-2.5 w-2.5 rounded-full bg-danger-500" />
+          Hard ceiling
+        </span>
+        <span className="font-semibold text-danger-400">
+          {money(g.ceiling)}/mo
+        </span>
+      </div>
+      <p className="muted border-t border-white/10 pt-3">
+        Stay under {money(g.safeLimit)} and you&apos;re in the green. Cross{' '}
+        {money(g.ceiling)} and gambling is doing real damage.
       </p>
     </div>
   );
