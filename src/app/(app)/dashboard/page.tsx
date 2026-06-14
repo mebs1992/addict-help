@@ -222,7 +222,6 @@ export default async function DashboardPage() {
           goalSaved={goal ? Number(goal.saved_amount) : 0}
           goalTarget={goal ? Number(goal.target_amount) : 0}
           reasons={reasons}
-          money={money}
         />
       </div>
 

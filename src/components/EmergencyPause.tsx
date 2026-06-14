@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { EMERGENCY_PAUSE_SECONDS } from '@/lib/constants';
 import { recordEmergencyPause } from '@/lib/actions';
+import { money } from '@/lib/calculations';
 
 function fmt(s: number) {
   const m = Math.floor(s / 60);
@@ -24,7 +25,6 @@ export function EmergencyPause({
   goalSaved,
   goalTarget,
   reasons,
-  money,
 }: {
   monthlyLosses: number;
   currentStreak: number;
@@ -32,7 +32,6 @@ export function EmergencyPause({
   goalSaved: number;
   goalTarget: number;
   reasons: string[];
-  money: (n: number) => string;
 }) {
   const [open, setOpen] = useState(false);
   const [remaining, setRemaining] = useState(EMERGENCY_PAUSE_SECONDS);
