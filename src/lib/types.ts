@@ -30,6 +30,7 @@ export interface Profile {
   email: string | null;
   full_name: string | null;
   hourly_wage: number;
+  monthly_income: number | null;
   annual_income: number | null;
   monthly_expenses: number | null;
   consequence_mode: boolean;

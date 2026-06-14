@@ -5,14 +5,13 @@ import { redirect } from 'next/navigation';
 import { createClient } from './supabase/server';
 import { PERSONAL_USER_ID } from './config';
 import {
-  disposableIncome,
   earnedAchievementCodes,
+  guardrailsForIncome,
   hoursWorked,
   monthKey,
-  recommendedBudget,
   streakFromLastGamble,
 } from './calculations';
-import { ACHIEVEMENTS, XP } from './constants';
+import { ACHIEVEMENTS, GUARDRAIL_SAFE_PCT, XP } from './constants';
 import type { GamblingSession } from './types';
 
 const USER_ID = PERSONAL_USER_ID;
@@ -37,67 +36,34 @@ async function addXp(amount: number) {
 }
 
 // ---------------------------------------------------------------------------
-// Feature 1: Budget setup
+// Feature 1: Simple budget setup — one question, monthly income.
+// The app derives tiered guardrails (a safe limit + a hard ceiling) from it.
 // ---------------------------------------------------------------------------
 export async function saveBudget(formData: FormData) {
   const supabase = createClient();
 
-  const annualIncome = num(formData.get('annual_income'));
-  const monthlyExpenses = num(formData.get('monthly_expenses'));
-  const hourlyWage = num(formData.get('hourly_wage'), 25);
-  const budgetPct = num(formData.get('budget_pct'), 1);
-  const maxBudgetRaw = formData.get('max_budget');
-  const maxBudget =
-    maxBudgetRaw && String(maxBudgetRaw).trim() !== ''
-      ? num(maxBudgetRaw)
-      : null;
-  const savingsTarget = num(formData.get('savings_target'));
+  const monthlyIncome = num(formData.get('monthly_income'));
+  const g = guardrailsForIncome(monthlyIncome);
 
   await supabase
     .from('profiles')
-    .update({
-      annual_income: annualIncome,
-      monthly_expenses: monthlyExpenses,
-      hourly_wage: hourlyWage,
-    })
+    .update({ monthly_income: monthlyIncome })
     .eq('id', USER_ID);
 
-  const disposable = disposableIncome(annualIncome, monthlyExpenses);
-  const recommended = recommendedBudget(disposable, budgetPct, maxBudget);
-
+  // Persist the derived safe limit as this month's allowance so the rest of the
+  // app (check-in result, reports) keeps a single coherent number to compare
+  // spending against. `max_budget` carries the hard ceiling.
   await supabase.from('monthly_budgets').upsert(
     {
       user_id: USER_ID,
       month: monthKey(),
-      disposable_income: disposable,
-      budget_pct: budgetPct,
-      max_budget: maxBudget,
-      recommended_budget: recommended,
+      disposable_income: monthlyIncome,
+      budget_pct: GUARDRAIL_SAFE_PCT,
+      max_budget: g.ceiling,
+      recommended_budget: g.safeLimit,
     },
     { onConflict: 'user_id,month' },
   );
-
-  if (savingsTarget > 0) {
-    const { data: existing } = await supabase
-      .from('savings_goals')
-      .select('id')
-      .eq('user_id', USER_ID)
-      .eq('is_primary', true)
-      .maybeSingle();
-    if (existing) {
-      await supabase
-        .from('savings_goals')
-        .update({ target_amount: savingsTarget })
-        .eq('id', existing.id);
-    } else {
-      await supabase.from('savings_goals').insert({
-        user_id: USER_ID,
-        title: 'My savings goal',
-        target_amount: savingsTarget,
-        is_primary: true,
-      });
-    }
-  }
 
   revalidatePath('/', 'layout');
   redirect('/dashboard');

@@ -2,6 +2,8 @@
 
 import {
   ACHIEVEMENTS,
+  GUARDRAIL_CEILING_PCT,
+  GUARDRAIL_SAFE_PCT,
   INVEST_ANNUAL_RETURN,
   INVEST_YEARS,
   LEVELS,
@@ -9,27 +11,35 @@ import {
   type OpportunityItem,
 } from './constants';
 
-/** Monthly disposable income from annual income and monthly expenses. */
-export function disposableIncome(
-  annualIncome: number | null,
-  monthlyExpenses: number | null,
-): number {
-  const monthlyIncome = (annualIncome ?? 0) / 12;
-  return Math.max(0, monthlyIncome - (monthlyExpenses ?? 0));
+export interface Guardrails {
+  /** Monthly take-home income the limits are derived from. */
+  monthlyIncome: number;
+  /** Green ceiling — spending at or under this is low-risk. */
+  safeLimit: number;
+  /** Red ceiling — spending above this is clearly harmful. */
+  ceiling: number;
 }
 
 /**
- * Recommended monthly gambling budget: a small percentage of disposable income,
- * capped at the user-configurable max. Never negative.
+ * Tiered monthly spending guardrails derived from monthly take-home income.
+ * This is the whole "budget": a safe limit (1%) and a hard ceiling (3%).
  */
-export function recommendedBudget(
-  disposable: number,
-  pct: number,
-  maxCap: number | null,
-): number {
-  const raw = (disposable * pct) / 100;
-  if (maxCap != null && maxCap >= 0) return Math.min(raw, maxCap);
-  return raw;
+export function guardrailsForIncome(monthlyIncome: number | null): Guardrails {
+  const income = Math.max(0, monthlyIncome ?? 0);
+  return {
+    monthlyIncome: income,
+    safeLimit: (income * GUARDRAIL_SAFE_PCT) / 100,
+    ceiling: (income * GUARDRAIL_CEILING_PCT) / 100,
+  };
+}
+
+export type SpendZone = 'safe' | 'caution' | 'danger';
+
+/** Which guardrail zone a month's spend falls into. */
+export function spendZone(spent: number, g: Guardrails): SpendZone {
+  if (g.ceiling > 0 && spent > g.ceiling) return 'danger';
+  if (g.safeLimit > 0 && spent > g.safeLimit) return 'caution';
+  return 'safe';
 }
 
 /** Hours of work a dollar amount represents at a given hourly wage. */

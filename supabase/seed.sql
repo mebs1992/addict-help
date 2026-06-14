@@ -1,7 +1,7 @@
 -- ============================================================================
 -- Optional demo data for "The Cost of One Spin" (personal single-user mode)
 -- ----------------------------------------------------------------------------
--- Run AFTER migrations 0001–0004. It fills the single personal profile with a
+-- Run AFTER migrations 0001–0005. It fills the single personal profile with a
 -- realistic month of activity so you can see the app populated. Re-running it
 -- clears prior demo gambling sessions first, so it's safe to repeat.
 --
@@ -16,6 +16,7 @@ begin
   update public.profiles set
     full_name          = 'Me',
     hourly_wage        = 32,
+    monthly_income     = 6500,
     annual_income      = 78000,
     monthly_expenses   = 4200,
     consequence_mode   = true,
@@ -24,11 +25,11 @@ begin
     xp                 = 310
   where id = uid;
 
-  -- Current month budget ----------------------------------------------------
+  -- Current month guardrails (safe limit 1% / hard ceiling 3% of income) -----
   insert into public.monthly_budgets
     (user_id, month, disposable_income, budget_pct, max_budget, recommended_budget)
   values
-    (uid, date_trunc('month', current_date)::date, 2300, 1, 25, 23)
+    (uid, date_trunc('month', current_date)::date, 6500, 1, 195, 65)
   on conflict (user_id, month) do update
     set disposable_income = excluded.disposable_income,
         recommended_budget = excluded.recommended_budget,

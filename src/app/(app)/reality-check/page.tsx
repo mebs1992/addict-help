@@ -1,16 +1,15 @@
 import { getProfile, getSessions } from '@/lib/data';
-import { hoursWorked, money, sum } from '@/lib/calculations';
+import { hoursWorked, money, monthKey, sum } from '@/lib/calculations';
 import { StatCard } from '@/components/ui';
 
 export default async function RealityCheckPage() {
   const [profile, sessions] = await Promise.all([getProfile(), getSessions()]);
   const wage = profile?.hourly_wage ?? 25;
-  const year = new Date().getFullYear();
 
   const lifetime = sum(sessions.map((s) => Number(s.amount)));
-  const yearTotal = sum(
+  const monthTotal = sum(
     sessions
-      .filter((s) => new Date(s.gambled_at).getFullYear() === year)
+      .filter((s) => monthKey(new Date(s.gambled_at)) === monthKey())
       .map((s) => Number(s.amount)),
   );
   const count = sessions.length;
@@ -41,8 +40,8 @@ export default async function RealityCheckPage() {
 
       <div className="grid grid-cols-2 gap-3">
         <StatCard
-          label="This year"
-          value={money(yearTotal)}
+          label="This month"
+          value={money(monthTotal)}
           tone="danger"
           icon="📅"
         />
