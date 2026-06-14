@@ -10,7 +10,7 @@ import {
   getStreak,
 } from '@/lib/data';
 import {
-  guardrailsForIncome,
+  guardrailsFor,
   money,
   monthKey,
   opportunityBreakdown,
@@ -41,8 +41,12 @@ export default async function DashboardPage() {
   );
   const lifetime = sum(sessions.map((s) => Number(s.amount)));
 
-  const g = guardrailsForIncome(profile?.monthly_income ?? 0);
+  const g = guardrailsFor(
+    profile?.monthly_income ?? 0,
+    profile?.monthly_expenses ?? 0,
+  );
   const hasGuardrails = g.monthlyIncome > 0;
+  const noRoom = hasGuardrails && g.disposable <= 0;
   const zone = spendZone(monthSpent, g);
   const usedPct = g.ceiling > 0 ? (monthSpent / g.ceiling) * 100 : 0;
   const safeMarkerPct = g.ceiling > 0 ? (g.safeLimit / g.ceiling) * 100 : 0;
@@ -60,7 +64,8 @@ export default async function DashboardPage() {
       : zone === 'caution'
         ? 'bg-warn-500/20 text-warn-400'
         : 'bg-brand-500/20 text-brand-400';
-  const needsAck = zone === 'danger' && budget && !budget.acknowledged_over;
+  const needsAck =
+    zone === 'danger' && !noRoom && budget && !budget.acknowledged_over;
 
   const opp = opportunityBreakdown(lifetime);
   const reasons = accountability
@@ -77,16 +82,35 @@ export default async function DashboardPage() {
         <h1 className="text-2xl font-bold">{firstName} 👋</h1>
       </div>
 
-      {/* No income set yet -> prompt the one-question setup */}
+      {/* Not set up yet -> prompt the income + expenses setup */}
       {!hasGuardrails && (
         <Banner tone="warn">
           <div className="flex items-center justify-between gap-3">
-            <span>Tell us your monthly income to unlock your safe limit.</span>
+            <span>
+              Add your income and expenses to unlock your safe limit.
+            </span>
             <Link href="/budget" className="btn-ghost shrink-0 py-1.5">
               Set up
             </Link>
           </div>
         </Banner>
+      )}
+
+      {/* Expenses meet or exceed income -> nothing spare to gamble with */}
+      {noRoom && (
+        <div className="rounded-2xl border-2 border-danger-500/60 bg-danger-500/10 p-5">
+          <p className="text-lg font-bold text-danger-400">
+            Nothing spare this month.
+          </p>
+          <p className="mt-1 text-sm text-slate-200">
+            Your expenses ({money(g.monthlyExpenses)}) meet or exceed your income
+            ({money(g.monthlyIncome)}), so any gambling comes straight out of
+            essentials.{' '}
+            {monthSpent > 0
+              ? `You've already spent ${money(monthSpent)} this month.`
+              : 'Your safe limit right now is $0.'}
+          </p>
+        </div>
       )}
 
       {/* Crossed the hard ceiling -> acknowledge honestly */}
@@ -109,7 +133,7 @@ export default async function DashboardPage() {
       )}
 
       {/* Guardrail meter — where this month's spend sits in the zones */}
-      {hasGuardrails && (
+      {hasGuardrails && !noRoom && (
         <div
           className={`card ${zone === 'danger' ? 'border-danger-500/50 bg-danger-500/5' : ''}`}
         >
@@ -183,7 +207,13 @@ export default async function DashboardPage() {
         <StatCard
           label="Safe monthly limit"
           value={hasGuardrails ? money(g.safeLimit) : '—'}
-          sub={hasGuardrails ? 'what you can afford' : 'set your income'}
+          sub={
+            !hasGuardrails
+              ? 'set up your budget'
+              : noRoom
+                ? 'nothing spare'
+                : 'what you can afford'
+          }
           tone="brand"
           icon="🛟"
         />

@@ -12,8 +12,12 @@ import {
 } from './constants';
 
 export interface Guardrails {
-  /** Monthly take-home income the limits are derived from. */
+  /** Monthly take-home income. */
   monthlyIncome: number;
+  /** Essential monthly expenses (rent, bills, food…). */
+  monthlyExpenses: number;
+  /** What's left after essentials — income minus expenses, never negative. */
+  disposable: number;
   /** Green ceiling — spending at or under this is low-risk. */
   safeLimit: number;
   /** Red ceiling — spending above this is clearly harmful. */
@@ -21,15 +25,23 @@ export interface Guardrails {
 }
 
 /**
- * Tiered monthly spending guardrails derived from monthly take-home income.
- * This is the whole "budget": a safe limit (1%) and a hard ceiling (3%).
+ * Tiered monthly spending guardrails. Gambling money should only come out of
+ * what's left after essential expenses, so the limits are a share of disposable
+ * income (income − expenses): a safe limit (1%) and a hard ceiling (3%).
  */
-export function guardrailsForIncome(monthlyIncome: number | null): Guardrails {
+export function guardrailsFor(
+  monthlyIncome: number | null,
+  monthlyExpenses: number | null,
+): Guardrails {
   const income = Math.max(0, monthlyIncome ?? 0);
+  const expenses = Math.max(0, monthlyExpenses ?? 0);
+  const disposable = Math.max(0, income - expenses);
   return {
     monthlyIncome: income,
-    safeLimit: (income * GUARDRAIL_SAFE_PCT) / 100,
-    ceiling: (income * GUARDRAIL_CEILING_PCT) / 100,
+    monthlyExpenses: expenses,
+    disposable,
+    safeLimit: (disposable * GUARDRAIL_SAFE_PCT) / 100,
+    ceiling: (disposable * GUARDRAIL_CEILING_PCT) / 100,
   };
 }
 
@@ -37,8 +49,10 @@ export type SpendZone = 'safe' | 'caution' | 'danger';
 
 /** Which guardrail zone a month's spend falls into. */
 export function spendZone(spent: number, g: Guardrails): SpendZone {
-  if (g.ceiling > 0 && spent > g.ceiling) return 'danger';
-  if (g.safeLimit > 0 && spent > g.safeLimit) return 'caution';
+  // No disposable income means there's no room to gamble at all.
+  if (g.ceiling <= 0) return spent > 0 ? 'danger' : 'safe';
+  if (spent > g.ceiling) return 'danger';
+  if (spent > g.safeLimit) return 'caution';
   return 'safe';
 }
 

@@ -6,7 +6,7 @@ import { createClient } from './supabase/server';
 import { PERSONAL_USER_ID } from './config';
 import {
   earnedAchievementCodes,
-  guardrailsForIncome,
+  guardrailsFor,
   hoursWorked,
   monthKey,
   streakFromLastGamble,
@@ -36,18 +36,23 @@ async function addXp(amount: number) {
 }
 
 // ---------------------------------------------------------------------------
-// Feature 1: Simple budget setup — one question, monthly income.
-// The app derives tiered guardrails (a safe limit + a hard ceiling) from it.
+// Feature 1: Simple budget setup — monthly income and essential expenses.
+// The app derives tiered guardrails (a safe limit + a hard ceiling) from the
+// disposable income left after expenses.
 // ---------------------------------------------------------------------------
 export async function saveBudget(formData: FormData) {
   const supabase = createClient();
 
   const monthlyIncome = num(formData.get('monthly_income'));
-  const g = guardrailsForIncome(monthlyIncome);
+  const monthlyExpenses = num(formData.get('monthly_expenses'));
+  const g = guardrailsFor(monthlyIncome, monthlyExpenses);
 
   await supabase
     .from('profiles')
-    .update({ monthly_income: monthlyIncome })
+    .update({
+      monthly_income: monthlyIncome,
+      monthly_expenses: monthlyExpenses,
+    })
     .eq('id', USER_ID);
 
   // Persist the derived safe limit as this month's allowance so the rest of the
@@ -57,7 +62,7 @@ export async function saveBudget(formData: FormData) {
     {
       user_id: USER_ID,
       month: monthKey(),
-      disposable_income: monthlyIncome,
+      disposable_income: g.disposable,
       budget_pct: GUARDRAIL_SAFE_PCT,
       max_budget: g.ceiling,
       recommended_budget: g.safeLimit,

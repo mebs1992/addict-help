@@ -1,9 +1,10 @@
 import type { ConsequenceCategory, MoodValue } from './types';
 
-// Tiered monthly spending guardrails, as a % of monthly (take-home) income.
-// Spend at or below the safe limit is "green"; above the ceiling is clearly
-// harmful ("red"); in between is "caution". The whole budget setup is derived
-// from these two numbers and the person's monthly income.
+// Tiered monthly spending guardrails, as a % of disposable income (monthly
+// take-home income minus essential expenses). Spend at or below the safe limit
+// is "green"; above the ceiling is clearly harmful ("red"); in between is
+// "caution". The whole budget setup is derived from these two numbers, the
+// person's monthly income and their monthly expenses.
 export const GUARDRAIL_SAFE_PCT = 1; // green ceiling — a low-risk limit
 export const GUARDRAIL_CEILING_PCT = 3; // red ceiling — clear harm above this
 

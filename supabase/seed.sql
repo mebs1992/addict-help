@@ -25,11 +25,12 @@ begin
     xp                 = 310
   where id = uid;
 
-  -- Current month guardrails (safe limit 1% / hard ceiling 3% of income) -----
+  -- Current month guardrails: disposable = 6500 income - 4200 expenses = 2300.
+  -- Safe limit 1% (= 23) / hard ceiling 3% (= 69) of disposable income.
   insert into public.monthly_budgets
     (user_id, month, disposable_income, budget_pct, max_budget, recommended_budget)
   values
-    (uid, date_trunc('month', current_date)::date, 6500, 1, 195, 65)
+    (uid, date_trunc('month', current_date)::date, 2300, 1, 69, 23)
   on conflict (user_id, month) do update
     set disposable_income = excluded.disposable_income,
         recommended_budget = excluded.recommended_budget,
