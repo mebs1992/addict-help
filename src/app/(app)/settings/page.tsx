@@ -1,4 +1,4 @@
-import { signOut, updateSettings } from '@/lib/actions';
+import { updateSettings } from '@/lib/actions';
 import { getProfile } from '@/lib/data';
 import { levelForXp, money } from '@/lib/calculations';
 import { LEVELS } from '@/lib/constants';
@@ -17,7 +17,7 @@ export default async function SettingsPage({
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold">You</h1>
-        <p className="muted mt-1">{profile?.email}</p>
+        <p className="muted mt-1">Personal mode — your private space.</p>
       </div>
 
       {searchParams.saved && <Banner tone="brand">Settings saved.</Banner>}
@@ -129,10 +129,6 @@ export default async function SettingsPage({
         </p>
 
         <button className="btn-primary w-full py-3">Save preferences</button>
-      </form>
-
-      <form action={signOut}>
-        <button className="btn-ghost w-full">Sign out</button>
       </form>
 
       <p className="muted text-center text-xs">

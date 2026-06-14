@@ -1,33 +1,17 @@
-import { cookies } from 'next/headers';
-import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
 /**
- * Server Supabase client for Server Components, Server Actions and Route
- * Handlers. Wires Supabase's auth cookies through Next's cookie store.
+ * Server-only Supabase client using the secret service-role key.
+ *
+ * Personal mode has no auth, so every read/write happens on the server with
+ * the service role (which bypasses RLS). The service-role key is NOT exposed
+ * to the browser — it lives only in server env vars on Vercel.
  */
 export function createClient() {
-  const cookieStore = cookies();
-
-  return createServerClient(
+  return createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet: { name: string; value: string; options?: CookieOptions }[]) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options),
-            );
-          } catch {
-            // `setAll` was called from a Server Component. This can be ignored
-            // when middleware is refreshing sessions (see middleware.ts).
-          }
-        },
-      },
-    },
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { persistSession: false, autoRefreshToken: false } },
   );
 }
 
@@ -35,6 +19,6 @@ export function createClient() {
 export function isSupabaseConfigured(): boolean {
   return Boolean(
     process.env.NEXT_PUBLIC_SUPABASE_URL &&
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
   );
 }

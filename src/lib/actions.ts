@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { createClient } from './supabase/server';
+import { PERSONAL_USER_ID } from './config';
 import {
   disposableIncome,
   earnedAchievementCodes,
@@ -14,14 +15,7 @@ import {
 import { ACHIEVEMENTS, XP } from './constants';
 import type { GamblingSession } from './types';
 
-async function requireUser() {
-  const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect('/login');
-  return { supabase, user };
-}
+const USER_ID = PERSONAL_USER_ID;
 
 function num(v: FormDataEntryValue | null, fallback = 0): number {
   const n = parseFloat(String(v ?? ''));
@@ -29,24 +23,24 @@ function num(v: FormDataEntryValue | null, fallback = 0): number {
 }
 
 async function addXp(amount: number) {
-  const { supabase, user } = await requireUser();
+  const supabase = createClient();
   const { data } = await supabase
     .from('profiles')
     .select('xp')
-    .eq('id', user.id)
+    .eq('id', USER_ID)
     .single();
   const current = data?.xp ?? 0;
   await supabase
     .from('profiles')
     .update({ xp: current + amount })
-    .eq('id', user.id);
+    .eq('id', USER_ID);
 }
 
 // ---------------------------------------------------------------------------
 // Feature 1: Budget setup
 // ---------------------------------------------------------------------------
 export async function saveBudget(formData: FormData) {
-  const { supabase, user } = await requireUser();
+  const supabase = createClient();
 
   const annualIncome = num(formData.get('annual_income'));
   const monthlyExpenses = num(formData.get('monthly_expenses'));
@@ -66,14 +60,14 @@ export async function saveBudget(formData: FormData) {
       monthly_expenses: monthlyExpenses,
       hourly_wage: hourlyWage,
     })
-    .eq('id', user.id);
+    .eq('id', USER_ID);
 
   const disposable = disposableIncome(annualIncome, monthlyExpenses);
   const recommended = recommendedBudget(disposable, budgetPct, maxBudget);
 
   await supabase.from('monthly_budgets').upsert(
     {
-      user_id: user.id,
+      user_id: USER_ID,
       month: monthKey(),
       disposable_income: disposable,
       budget_pct: budgetPct,
@@ -87,7 +81,7 @@ export async function saveBudget(formData: FormData) {
     const { data: existing } = await supabase
       .from('savings_goals')
       .select('id')
-      .eq('user_id', user.id)
+      .eq('user_id', USER_ID)
       .eq('is_primary', true)
       .maybeSingle();
     if (existing) {
@@ -97,7 +91,7 @@ export async function saveBudget(formData: FormData) {
         .eq('id', existing.id);
     } else {
       await supabase.from('savings_goals').insert({
-        user_id: user.id,
+        user_id: USER_ID,
         title: 'My savings goal',
         target_amount: savingsTarget,
         is_primary: true,
@@ -110,11 +104,11 @@ export async function saveBudget(formData: FormData) {
 }
 
 export async function acknowledgeOverBudget() {
-  const { supabase, user } = await requireUser();
+  const supabase = createClient();
   await supabase
     .from('monthly_budgets')
     .update({ acknowledged_over: true })
-    .eq('user_id', user.id)
+    .eq('user_id', USER_ID)
     .eq('month', monthKey());
   revalidatePath('/', 'layout');
 }
@@ -123,7 +117,7 @@ export async function acknowledgeOverBudget() {
 // Feature 2 + 10: Log a gambling session
 // ---------------------------------------------------------------------------
 export async function logGamblingSession(formData: FormData) {
-  const { supabase, user } = await requireUser();
+  const supabase = createClient();
 
   const amount = num(formData.get('amount'));
   const venue = (formData.get('venue') as string) || null;
@@ -138,13 +132,13 @@ export async function logGamblingSession(formData: FormData) {
   const { data: profile } = await supabase
     .from('profiles')
     .select('hourly_wage')
-    .eq('id', user.id)
+    .eq('id', USER_ID)
     .single();
   const wage = profile?.hourly_wage ?? 25;
   const hours = hoursWorked(amount, wage);
 
   await supabase.from('gambling_sessions').insert({
-    user_id: user.id,
+    user_id: USER_ID,
     amount,
     venue,
     gambled_at: gambledAt,
@@ -158,7 +152,7 @@ export async function logGamblingSession(formData: FormData) {
   const { data: streak } = await supabase
     .from('streaks')
     .select('*')
-    .eq('user_id', user.id)
+    .eq('user_id', USER_ID)
     .maybeSingle();
 
   const gambleDate = gambledAt.slice(0, 10);
@@ -169,7 +163,7 @@ export async function logGamblingSession(formData: FormData) {
 
   await supabase.from('streaks').upsert(
     {
-      user_id: user.id,
+      user_id: USER_ID,
       current_streak: 0,
       longest_streak: longest,
       last_gamble_date: gambleDate,
@@ -189,23 +183,19 @@ export async function logGamblingSession(formData: FormData) {
 // ---------------------------------------------------------------------------
 export async function syncProgress() {
   const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return;
 
   const [{ data: profile }, { data: streak }, { data: sessions }] =
     await Promise.all([
       supabase
         .from('profiles')
         .select('daily_vault_amount')
-        .eq('id', user.id)
+        .eq('id', USER_ID)
         .maybeSingle(),
-      supabase.from('streaks').select('*').eq('user_id', user.id).maybeSingle(),
+      supabase.from('streaks').select('*').eq('user_id', USER_ID).maybeSingle(),
       supabase
         .from('gambling_sessions')
         .select('gambled_at')
-        .eq('user_id', user.id),
+        .eq('user_id', USER_ID),
     ]);
 
   if (!streak) return;
@@ -239,13 +229,13 @@ export async function syncProgress() {
       longest_streak: longest,
       vault_balance: vault,
     })
-    .eq('user_id', user.id);
+    .eq('user_id', USER_ID);
 
   // Unlock any achievements earned at the current streak length.
   const earned = earnedAchievementCodes(effectiveCurrent);
   if (earned.length) {
     const rows = earned.map((code) => ({
-      user_id: user.id,
+      user_id: USER_ID,
       code,
       title: ACHIEVEMENTS.find((a) => a.code === code)?.title ?? code,
     }));
@@ -259,12 +249,12 @@ export async function syncProgress() {
 // Feature 8: Accountability wall
 // ---------------------------------------------------------------------------
 export async function addAccountabilityEntry(formData: FormData) {
-  const { supabase, user } = await requireUser();
+  const supabase = createClient();
   const entryType = formData.get('entry_type') as string;
   const content = ((formData.get('content') as string) || '').trim();
   if (!content) return;
   await supabase.from('accountability_entries').insert({
-    user_id: user.id,
+    user_id: USER_ID,
     entry_type: entryType,
     content,
   });
@@ -273,34 +263,51 @@ export async function addAccountabilityEntry(formData: FormData) {
 }
 
 export async function deleteAccountabilityEntry(formData: FormData) {
-  const { supabase, user } = await requireUser();
+  const supabase = createClient();
   const id = formData.get('id') as string;
   await supabase
     .from('accountability_entries')
     .delete()
     .eq('id', id)
-    .eq('user_id', user.id);
+    .eq('user_id', USER_ID);
   revalidatePath('/accountability');
 }
 
 // ---------------------------------------------------------------------------
-// Feature 6: Future Self
+// Feature 6: Future Self (server-side image upload to Storage)
 // ---------------------------------------------------------------------------
 export async function saveFutureSelf(formData: FormData) {
-  const { supabase, user } = await requireUser();
+  const supabase = createClient();
   const caption = (formData.get('caption') as string) || null;
-  const imageUrl = (formData.get('image_url') as string) || null;
   const update: Record<string, unknown> = { future_self_caption: caption };
-  if (imageUrl) update.future_self_image_url = imageUrl;
-  await supabase.from('profiles').update(update).eq('id', user.id);
+
+  const file = formData.get('photo') as File | null;
+  if (file && typeof file === 'object' && file.size > 0) {
+    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+    const path = `${USER_ID}/${Date.now()}.${ext}`;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const { error } = await supabase.storage
+      .from('future-self')
+      .upload(path, bytes, {
+        contentType: file.type || 'image/jpeg',
+        upsert: true,
+      });
+    if (!error) {
+      const { data } = supabase.storage.from('future-self').getPublicUrl(path);
+      update.future_self_image_url = data.publicUrl;
+    }
+  }
+
+  await supabase.from('profiles').update(update).eq('id', USER_ID);
   revalidatePath('/', 'layout');
+  redirect('/future-self?saved=1');
 }
 
 // ---------------------------------------------------------------------------
 // Goals
 // ---------------------------------------------------------------------------
 export async function saveGoal(formData: FormData) {
-  const { supabase, user } = await requireUser();
+  const supabase = createClient();
   const id = (formData.get('id') as string) || null;
   const title = ((formData.get('title') as string) || '').trim();
   const target = num(formData.get('target_amount'));
@@ -312,14 +319,14 @@ export async function saveGoal(formData: FormData) {
       .from('savings_goals')
       .update({ title, target_amount: target, saved_amount: saved })
       .eq('id', id)
-      .eq('user_id', user.id);
+      .eq('user_id', USER_ID);
   } else {
     const { count } = await supabase
       .from('savings_goals')
       .select('*', { count: 'exact', head: true })
-      .eq('user_id', user.id);
+      .eq('user_id', USER_ID);
     await supabase.from('savings_goals').insert({
-      user_id: user.id,
+      user_id: USER_ID,
       title,
       target_amount: target,
       saved_amount: saved,
@@ -341,7 +348,7 @@ export async function recordEmergencyPause() {
 // Settings
 // ---------------------------------------------------------------------------
 export async function updateSettings(formData: FormData) {
-  const { supabase, user } = await requireUser();
+  const supabase = createClient();
   const fullName = (formData.get('full_name') as string) || null;
   const hourlyWage = num(formData.get('hourly_wage'), 25);
   const dailyVault = num(formData.get('daily_vault_amount'), 5);
@@ -355,16 +362,7 @@ export async function updateSettings(formData: FormData) {
       daily_vault_amount: dailyVault,
       consequence_mode: consequenceMode,
     })
-    .eq('id', user.id);
+    .eq('id', USER_ID);
   revalidatePath('/', 'layout');
   redirect('/settings?saved=1');
-}
-
-// ---------------------------------------------------------------------------
-// Auth
-// ---------------------------------------------------------------------------
-export async function signOut() {
-  const supabase = createClient();
-  await supabase.auth.signOut();
-  redirect('/login');
 }

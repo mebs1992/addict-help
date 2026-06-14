@@ -1,10 +1,12 @@
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
 import { BottomNav } from '@/components/BottomNav';
 import { getProfile } from '@/lib/data';
 import { syncProgress } from '@/lib/actions';
 import { levelForXp } from '@/lib/calculations';
 import { isSupabaseConfigured } from '@/lib/supabase/server';
+
+// Personal data is per-request — never statically prerender these routes.
+export const dynamic = 'force-dynamic';
 
 export default async function AppLayout({
   children,
@@ -19,7 +21,7 @@ export default async function AppLayout({
           <p className="muted mt-2">
             Supabase isn&apos;t configured yet. Add{' '}
             <code className="text-brand-400">NEXT_PUBLIC_SUPABASE_URL</code> and{' '}
-            <code className="text-brand-400">NEXT_PUBLIC_SUPABASE_ANON_KEY</code>{' '}
+            <code className="text-brand-400">SUPABASE_SERVICE_ROLE_KEY</code>{' '}
             to your environment, then reload. See the README for setup.
           </p>
         </div>
@@ -28,12 +30,12 @@ export default async function AppLayout({
   }
 
   const profile = await getProfile();
-  if (!profile) redirect('/login');
 
   // Keep streak, vault and achievements current on every visit.
   await syncProgress();
 
-  const { current, next, progressPct } = levelForXp(profile.xp);
+  const xp = profile?.xp ?? 0;
+  const { current, next, progressPct } = levelForXp(xp);
 
   return (
     <div className="app-bg min-h-screen">
@@ -57,7 +59,7 @@ export default async function AppLayout({
                 {current.name}
               </span>
               <span className="block text-[10px] leading-none text-slate-400">
-                {profile.xp} XP{next ? ` · ${next.minXp - profile.xp} to go` : ''}
+                {xp} XP{next ? ` · ${next.minXp - xp} to go` : ''}
               </span>
             </span>
           </Link>

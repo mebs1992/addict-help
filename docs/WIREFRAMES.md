@@ -4,7 +4,7 @@ Mobile-first (max content width ≈ `28rem` / 448px), dark mode, sticky header
 with level/XP, floating "Log" action and a 5-item bottom tab bar. ASCII below
 approximates each screen.
 
-## Global shell (authenticated)
+## Global shell
 
 ```
 ┌─────────────────────────────────┐
@@ -21,32 +21,11 @@ approximates each screen.
 └─────────────────────────────────┘
 ```
 
-## 1 · Landing (public `/`)
+## 1 · Entry (`/`)
 
-```
-🎰 The Cost of One Spin
-Make every spin cost something visible.
-[ harm-reduction pitch copy ]
-[ Start taking control ]   (primary)
-[ I already have an account ]
-🎯 small budget · 🪞 visible cost · 🔥 streaks · 🆘 pause
-Gambling Help 1800 858 858
-```
-
-## 2 · Auth (`/login`, `/signup`)
-
-```
-🎰 The Cost of One Spin
-Welcome back / Start taking control
-┌ card ─────────────────┐
-│ [Name]   (signup only)│
-│ [Email]               │
-│ [Password]            │
-│ ⚠ error / ✓ message   │
-│ [ Sign in / Create ]  │
-│ link to other mode    │
-└───────────────────────┘
-```
+Personal mode has no landing page or login. The root route simply
+`redirect()`s to `/dashboard`, so opening the app drops you straight into your
+own space.
 
 ## 3 · Dashboard (`/dashboard`)
 
@@ -224,6 +203,5 @@ Level 2 🛡️ Building Discipline   [310 XP]
 Preferences: name / hourly wage / daily vault
 ☑ Consequence Mode
 [ Save preferences ]
-[ Sign out ]
 Gambling Help 1800 858 858
 ```

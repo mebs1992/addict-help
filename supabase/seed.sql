@@ -1,31 +1,20 @@
 -- ============================================================================
--- Seed data for "The Cost of One Spin"
+-- Optional demo data for "The Cost of One Spin" (personal single-user mode)
 -- ----------------------------------------------------------------------------
--- This seed is written to run AFTER you have created a demo auth user, because
--- Supabase manages passwords/identities in auth.users.
+-- Run AFTER migrations 0001–0004. It fills the single personal profile with a
+-- realistic month of activity so you can see the app populated. Re-running it
+-- clears prior demo gambling sessions first, so it's safe to repeat.
 --
--- 1) In the Supabase dashboard -> Authentication -> Users, create a user with
---    email: demo@costofonespin.app  (any password).
---    The on_auth_user_created trigger will create the matching profile + streak.
--- 2) Run this seed (SQL editor, or `supabase db reset` after adding to config).
---
--- It is idempotent-ish: it clears prior demo gambling sessions before reseeding.
+-- Skip this entirely if you'd rather start with a clean slate.
 -- ============================================================================
 
 do $$
 declare
-  uid uuid;
+  uid uuid := '00000000-0000-0000-0000-000000000001';
 begin
-  select id into uid from auth.users where email = 'demo@costofonespin.app' limit 1;
-
-  if uid is null then
-    raise notice 'Demo user demo@costofonespin.app not found — create it first, then re-run seed.';
-    return;
-  end if;
-
   -- Profile -----------------------------------------------------------------
   update public.profiles set
-    full_name          = 'Alex Demo',
+    full_name          = 'Me',
     hourly_wage        = 32,
     annual_income      = 78000,
     monthly_expenses   = 4200,
@@ -95,5 +84,5 @@ begin
     (uid, 'streak_7', 'One Week Strong')
   on conflict (user_id, code) do nothing;
 
-  raise notice 'Seed complete for %', uid;
+  raise notice 'Seed complete for personal profile %', uid;
 end$$;

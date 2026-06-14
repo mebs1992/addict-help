@@ -5,33 +5,30 @@
 - **Next.js App Router** with **React Server Components by default**. Pages fetch
   data on the server (no client data-fetching libraries, no API layer to
   maintain). Interactive bits are small **Client Components** (`'use client'`).
-- **Mutations are Server Actions** (`src/lib/actions.ts`, `auth-actions.ts`) —
-  progressively-enhanced `<form action={...}>` with no hand-written API routes
-  (except the OAuth/email `auth/callback` route handler).
-- **Supabase** provides Auth, Postgres (with RLS) and Storage. Three client
-  factories wrap `@supabase/ssr`:
-  - `lib/supabase/client.ts` — browser (Client Components, Storage uploads).
-  - `lib/supabase/server.ts` — Server Components / Actions / Route Handlers.
-  - `lib/supabase/middleware.ts` — refreshes the session cookie every request
-    and guards authenticated routes.
+- **Mutations are Server Actions** (`src/lib/actions.ts`) — progressively
+  enhanced `<form action={...}>` with no hand-written API routes.
+- **Personal mode (no auth).** All data belongs to one fixed profile
+  (`PERSONAL_USER_ID` in `lib/config.ts`). A single server-side Supabase client
+  (`lib/supabase/server.ts`) uses the secret **service-role key**, so reads and
+  writes never depend on a logged-in user and the key never reaches the browser.
 
 ## Layered design
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ Presentation (RSC pages + Client Components)                 │
+│ Presentation (RSC pages + a few Client Components)           │
 │   app/(app)/*  ·  components/*                               │
 ├─────────────────────────────────────────────────────────────┤
 │ Application                                                  │
 │   lib/data.ts      → read queries (server)                   │
 │   lib/actions.ts   → write server actions + syncProgress()   │
-│   lib/auth-actions → signIn / signUp                         │
 ├─────────────────────────────────────────────────────────────┤
 │ Domain (pure, no I/O — unit-testable)                        │
-│   lib/calculations.ts  ·  lib/constants.ts  ·  lib/types.ts  │
+│   lib/calculations.ts · lib/constants.ts · lib/types.ts      │
+│   lib/config.ts (PERSONAL_USER_ID)                           │
 ├─────────────────────────────────────────────────────────────┤
 │ Infrastructure                                               │
-│   lib/supabase/*   ·  middleware.ts  ·  Supabase (DB/RLS)    │
+│   lib/supabase/server.ts (service role)  ·  Supabase (DB)    │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -44,29 +41,31 @@ preview).
 
 | Component | Type | Why |
 |-----------|------|-----|
-| All `app/(app)/*/page.tsx` | Server | Fetch user-scoped data via `lib/data` |
-| `app/(app)/layout.tsx` | Server | Reads profile, runs `syncProgress()`, renders shell |
+| All `app/(app)/*/page.tsx` | Server | Fetch the profile's data via `lib/data` |
+| `app/(app)/layout.tsx` | Server | `force-dynamic`; reads profile, runs `syncProgress()`, renders shell |
 | `components/BottomNav` | Client | `usePathname()` for active tab |
 | `components/EmergencyPause` | Client | 10-min timer, breathing rotation, calls action |
-| `components/AuthForm` | Client | `useFormState`/`useFormStatus` for errors + pending |
 | `check-in/CheckInForm` | Client | Mood/consequence pickers, submit state |
-| `budget/BudgetPreview` | Client | Live recompute as the user types |
-| `future-self/FutureSelfForm` | Client | Direct browser → Storage upload, then action |
+| `budget/BudgetPreview` | Client | Live recompute as you type |
 | `components/ui`, `BarChart` | Server | Pure presentational, no interactivity |
+
+Note: `app/page.tsx` simply `redirect()`s to `/dashboard`. The Future Self photo
+is uploaded **server-side** inside the `saveFutureSelf` action (the `<File>` is
+sent through the form), so no browser Supabase client is needed.
 
 ## Data flow examples
 
 **Logging a session (Feature 2 + 10)**
 ```
 CheckInForm (client) --form action--> logGamblingSession (server action)
-  → insert gambling_sessions (hours_worked computed from profile.hourly_wage)
+  → insert gambling_sessions (hours_worked from profile.hourly_wage)
   → update streaks (break run, recompute longest, set last_gamble_date)
   → award XP on profiles
   → revalidatePath('/', 'layout')  → redirect /check-in/result?amount=…
 result page (server) reads sessions+budget → hours / invested / % over budget
 ```
 
-**Every authenticated page load**
+**Every app page load**
 ```
 (app)/layout.tsx → syncProgress() (idempotent):
   current_streak = days since last gamble
@@ -77,15 +76,17 @@ result page (server) reads sessions+budget → hours / invested / % over budget
 
 ## Database schema (overview)
 
-`profiles` (1:1 `auth.users`, the "users" table) · `monthly_budgets` ·
+`profiles` (the single "user", id = `PERSONAL_USER_ID`) · `monthly_budgets` ·
 `gambling_sessions` · `savings_goals` (also powers Future Self) · `achievements`
 · `streaks` (holds the vault balance) · `accountability_entries` · `reports`.
 
-- **RLS everywhere**: `auth.uid() = user_id` (`= id` for `profiles`). Generated
-  by a `DO` loop in migration `0002` for the owner-scoped tables.
-- **Triggers**: `set_updated_at` on mutable tables; `handle_new_user`
-  provisions a `profiles` + `streaks` row when an auth user is created.
-- **Storage**: a public `future-self` bucket, write-scoped to `<user_id>/…`.
+- Migrations `0001`–`0003` define tables, RLS and the Storage bucket.
+  Migration `0004` switches to personal mode: it drops the `profiles → auth.users`
+  foreign key, removes the signup trigger, and inserts the one profile + streak.
+- **RLS stays enabled** as defense in depth: the (now unused) anon key can read
+  nothing, while the server's service-role key bypasses RLS by design.
+- **Storage**: a public `future-self` bucket; images are written server-side
+  under `<PERSONAL_USER_ID>/…`.
 
 See `supabase/migrations/` for the authoritative DDL and `src/lib/types.ts` for
 the TypeScript mirror.
