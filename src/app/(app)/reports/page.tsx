@@ -1,5 +1,5 @@
 import { getAllBudgets, getSessions } from '@/lib/data';
-import { money, monthKey, sum } from '@/lib/calculations';
+import { money, monthKey, sum, zonedDayKey } from '@/lib/calculations';
 import { BarChart, type BarDatum } from '@/components/BarChart';
 import { Banner, StatCard } from '@/components/ui';
 
@@ -33,7 +33,7 @@ export default async function ReportsPage() {
     );
     const total = sum(monthSessions.map((s) => Number(s.amount)));
     const days = new Set(
-      monthSessions.map((s) => new Date(s.gambled_at).toISOString().slice(0, 10)),
+      monthSessions.map((s) => zonedDayKey(new Date(s.gambled_at))),
     ).size;
     const biggest = monthSessions.reduce(
       (m, s) => Math.max(m, Number(s.amount)),

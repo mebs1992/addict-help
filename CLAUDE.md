@@ -35,6 +35,8 @@ For pure-logic changes, sanity-check formulas with a quick `node -e` replica.
 | Pure logic / formulas (unit-testable, no I/O) | `src/lib/calculations.ts` |
 | Mutations (server actions) | `src/lib/actions.ts` |
 | Read queries | `src/lib/data.ts` |
+| Input validation/sanitisation for mutations | `src/lib/validation.ts` |
+| Best-effort per-action rate limiting | `src/lib/rateLimit.ts` |
 | Tunable numbers + catalogues | `src/lib/constants.ts` |
 | Domain types (mirror DB) | `src/lib/types.ts` |
 | UI primitives | `src/components/ui.tsx` (StatCard, ProgressBar, Banner, LinkCard, SectionHeader) |
@@ -52,9 +54,11 @@ For pure-logic changes, sanity-check formulas with a quick `node -e` replica.
 - **Recovery Mode (Phase 2, Feature 7.2):** a slip opens a supportive `RECOVERY_WINDOW_DAYS` (7) window instead of a shame reset — *derived* from `last_gamble_date` (no stored flag, like streak/vault). `recoveryStatus()` drives banners on the dashboard / streak / vault / check-in-result; the vault's gentle rate (above) is its mechanical half. `rotatingMessage(RECOVERY_MESSAGES)` advances daily (light Feature 7.6).
 - **Composite behaviour model (Phase 2, §8):** `behaviourModel()` blends recovery consistency, urge awareness and days-since-slip into a 0–100 `stabilityIndex` (+ band label). Pure; surfaced as the dashboard "Behavioural stability" teaser and on `/insights`.
 - **Behavioural insight engine (Phase 2, Feature 7.5):** pure roll-ups over Phase-1 data — `riskTimeWindows()` (DAY_PARTS buckets), `rankTriggers()`, `moodSpendBreakdown()`. Live-computed on `/insights` (no cache table); gated behind `INSIGHT_MIN_EVENTS`.
+- **Future Self messaging (Phase 3, Feature 7.6):** `futureSelfMessage()` picks a message set by context — high-risk window > recovery > approaching milestone > default — then `rotatingMessage()` advances it daily. Surfaced on the dashboard future-self card and `/future-self`.
+- **Mutation hardening (Phase 3, §10):** every server action funnels FormData through `validation.ts` (`v.amount`/`v.text`/`v.oneOf`/`v.timestamp`, bounds + enum checks) and is gated by `rateLimit.ts` `allow(actionName)` (in-memory fixed window, best-effort/per-instance; **not** applied to `syncProgress`, which runs every load).
 - **XP awarded:** log session 15, clean day 10, urge log 15, risk-gate "safe" 15, accountability entry 20, emergency pause 50. **Levels:** 0 / 250 / 750 / 2000.
 - **Achievements:** streak ≥ {3,7,30,90,180,365} days. **Emergency pause:** 10 min. **Invested projection:** 7%/yr, 10 yrs, monthly compounding.
-- **Timezone:** Phase 1 logic resolves "what day/time is it" through `APP_TIMEZONE` (Australia/Sydney) via `zonedParts()`/`zonedDayKey()`. Legacy `dayKey`/`monthKey` remain local-time (unchanged) — don't mix the two in one comparison.
+- **Timezone (standardised, §10):** all day/month bucketing resolves through `APP_TIMEZONE` (Australia/Sydney). `zonedParts()`/`zonedDayKey()` are the primitives, and `dayKey()`/`monthKey()` now delegate to them — storage stays UTC, the *derived* day/month is Sydney. Direct `toISOString().slice(0,10)` day-slicing has been replaced with `zonedDayKey()`.
 
 ## Database workflow
 Migrations are applied **manually** in the Supabase SQL Editor, in order (see README). When adding columns: create a new `000N_*.sql` (use `add column if not exists`), update `types.ts`, the relevant action/query, `seed.sql`, and the README migration list. The app self-heals missing `profiles`/`streaks` rows but **not** missing columns.
@@ -63,16 +67,17 @@ Migrations are applied **manually** in the Supabase SQL Editor, in order (see RE
 - **Never pass a function as a prop from a Server Component to a Client Component** — it throws "Functions cannot be passed directly to Client Components" → production "server-side exception". Import shared helpers (e.g. `money`) directly inside the client component instead.
 - **No dynamically-constructed Tailwind classes** (`` `text-${tone}-400` ``) — Tailwind can't see them at build time. Use explicit conditional full class strings.
 - **Apostrophes/HTML entities**: `&apos;` only works in JSX text, not inside a plain JS string literal.
-- **Timezones are inconsistent**: `monthKey`/`dayKey` use local time; some session dates use `toISOString()` (UTC). Be deliberate to avoid off-by-one-day bugs.
+- **Timezone is now Sydney-derived everywhere**: `dayKey`/`monthKey`/`zonedDayKey` all resolve in `APP_TIMEZONE`. When bucketing a stored UTC timestamp by day/month, use these — never `toISOString().slice(0,10)` (that buckets in UTC and reintroduces off-by-one-day bugs).
 - Read queries in `data.ts` intentionally ignore Supabase errors (return defaults), so a missing table/column degrades quietly rather than crashing.
+- Rate limiting (`rateLimit.ts`) is in-memory per-instance — fine here (single user), but a real multi-user deploy needs a shared store. Never wrap `syncProgress` (runs on every page load).
 
 ## Known gaps (don't assume these work)
 - No UI to create/edit **savings goals** (`saveGoal` exists, nothing calls it) — yet goals power Future Self + Emergency Pause.
 - `reports` table + `MonthlyReport` type are **unused** (Reports page recomputes live).
 - `XP.WITHIN_BUDGET_MONTH` and `XP.REVIEW_REPORT` are defined but **never awarded**.
 - Legacy `profiles.annual_income` column is unused.
-- No tests, no auth/rate-limiting (single-user, service-role).
-- **Phases 1 & 2 of the behavioural spec are built.** Phase 1: risk gate 7.1, spend simulation 7.3, urge tracking 7.4. Phase 2: Recovery Mode 7.2, behavioural insight engine 7.5, composite behaviour model §8 (all *derived* from existing tables — **no new migration** in Phase 2). Still TODO from Part B: full future-self rotating messaging (7.6 — only the recovery banner rotates so far) and the §10 engineering items (server-side rate limiting; finishing the global Sydney-timezone migration — legacy `dayKey`/`monthKey` are still local-time). The clean-day button was **kept** (not replaced) alongside urge tracking; Recovery Mode **layers on** the streak system rather than removing it.
+- No tests yet. No auth (single-user, service-role); rate limiting is in-memory/best-effort only.
+- **All of Part B is built (Phases 1–3).** Phase 1: risk gate 7.1, spend simulation 7.3, urge tracking 7.4. Phase 2: Recovery Mode 7.2, insight engine 7.5, composite behaviour model §8. Phase 3: Future Self messaging 7.6 + the §10 engineering items (Sydney-timezone standardisation, a server-side validation layer, action rate limiting). Schema lives in migration `0007` (Phases 2–3 added **no** new migration — all derived). The clean-day button was **kept** (not replaced) alongside urge tracking; Recovery Mode **layers on** the streak system rather than removing it.
 
 ## Conventions
 - Match surrounding style: 2-space indent, single quotes, functional components, server-first.
