@@ -3,6 +3,7 @@
 import {
   ACHIEVEMENTS,
   APP_TIMEZONE,
+  BEHAVIOUR_RECENT_DAYS,
   BEHAVIOUR_WINDOW_DAYS,
   DAY_PARTS,
   FUTURE_SELF_MESSAGES,
@@ -11,8 +12,15 @@ import {
   EXPOSURE_HIGH_MONTHS,
   EXPOSURE_MODERATE_CASH,
   EXPOSURE_MODERATE_MONTHS,
+  EXPOSURE_MONTHS_HIGH,
+  EXPOSURE_MONTHS_MODERATE,
+  FINANCIAL_STABLE_RATIO,
+  FINANCIAL_STRONG_RATIO,
   GUARDRAIL_CEILING_PCT,
   GUARDRAIL_SAFE_PCT,
+  IMPACT_HIGH_PCT,
+  IMPACT_LOW_PCT,
+  IMPACT_MODERATE_PCT,
   INSIGHT_MIN_EVENTS,
   INVEST_ANNUAL_RETURN,
   INVEST_YEARS,
@@ -23,10 +31,20 @@ import {
   RECOVERY_WINDOW_DAYS,
   STABILITY_BANDS,
   STABILITY_TARGET_DAYS,
+  URGE_INTENSITY_HIGH,
+  URGE_INTENSITY_MODERATE,
   type DayPart,
   type OpportunityItem,
 } from './constants';
-import type { HighRiskWindow, MoodValue, UrgeTrigger } from './types';
+import type {
+  FinancialPositionLevel,
+  HighRiskWindow,
+  ImpactLevel,
+  InterventionLevel,
+  MoodValue,
+  RiskBand,
+  UrgeTrigger,
+} from './types';
 
 export interface Guardrails {
   /** Monthly take-home income. */
@@ -42,9 +60,13 @@ export interface Guardrails {
 }
 
 /**
- * Tiered monthly spending guardrails. Gambling money should only come out of
- * what's left after essential expenses, so the limits are a share of disposable
- * income (income − expenses): a safe limit (1%) and a hard ceiling (3%).
+ * @deprecated Redesign v2.0 removes the gambling-allowance model. Use
+ * {@link calculateFinancialPosition} and {@link calculateImpactScore} instead.
+ * This is kept only so persisted `monthly_budgets` rows still resolve; it no
+ * longer drives any UI.
+ *
+ * Tiered monthly spending guardrails: a "safe limit" (1%) and "hard ceiling"
+ * (3%) of disposable income (income − expenses).
  */
 export function guardrailsFor(
   monthlyIncome: number | null,
@@ -64,7 +86,14 @@ export function guardrailsFor(
 
 export type SpendZone = 'safe' | 'caution' | 'danger';
 
-/** Which guardrail zone a month's spend falls into. */
+/**
+ * @deprecated Redesign v2.0. Implies a "safe" amount of gambling. Use
+ * {@link calculateImpactScore} (what a spend means) and
+ * {@link calculateInterventionLevel} (how hard to intervene) instead. Kept for
+ * migration compatibility only.
+ *
+ * Which guardrail zone a month's spend falls into.
+ */
 export function spendZone(spent: number, g: Guardrails): SpendZone {
   // No disposable income means there's no room to gamble at all.
   if (g.ceiling <= 0) return spent > 0 ? 'danger' : 'safe';
@@ -86,9 +115,11 @@ export interface ExposureAssessment {
 }
 
 /**
- * Exposure risk = how much cash is within easy reach to gamble. Spendings and
- * savings are accessible; the mortgage offset is treated as protected. The more
- * accessible cash relative to spare (disposable) income, the higher the risk.
+ * @deprecated Redesign v2.0 replaces this with {@link calculateExposureRisk},
+ * which measures accessible cash in months of monthly *surplus* (1 / 3 month
+ * bands) rather than disposable income (2 / 6). Kept for compatibility.
+ *
+ * Exposure risk = how much cash is within easy reach to gamble.
  */
 export function exposureRisk(
   spendings: number | null,
@@ -122,6 +153,281 @@ export function exposureRisk(
   }
 
   return { accessible, protectedFunds, months, level };
+}
+
+// ===========================================================================
+// Behavioural Risk Engine (Redesign v2.0)
+//
+// Three independent dimensions — financial position, exposure risk and
+// behavioural risk — combine into an intervention level. A separate impact
+// score states what a single gamble amount *means*. None of this answers "how
+// much can I safely gamble"; together they answer "how resilient / exposed /
+// vulnerable am I, and what does this decision mean?".
+// ===========================================================================
+
+// --- Dimension 1: Financial Position ---------------------------------------
+
+export interface FinancialPosition {
+  monthlyIncome: number;
+  monthlyExpenses: number;
+  /** income − expenses. Unlike `disposable` this can be negative. */
+  surplus: number;
+  /** surplus ÷ expenses, or null when expenses are unknown / zero. */
+  surplusRatio: number | null;
+  level: FinancialPositionLevel;
+}
+
+/**
+ * How resilient the person is to a financial setback — NOT how much gambling is
+ * acceptable. Surplus is measured against essential expenses: a buffer worth
+ * ≥50% of expenses is Strong, ≥20% Stable, below that Fragile.
+ */
+export function calculateFinancialPosition(
+  monthlyIncome: number | null,
+  monthlyExpenses: number | null,
+): FinancialPosition {
+  const income = Math.max(0, monthlyIncome ?? 0);
+  const expenses = Math.max(0, monthlyExpenses ?? 0);
+  const surplus = income - expenses;
+
+  // No expenses recorded: can't form a ratio. Any surplus reads as Strong;
+  // nothing at all is Fragile (we simply don't know enough to reassure).
+  if (expenses <= 0) {
+    return {
+      monthlyIncome: income,
+      monthlyExpenses: expenses,
+      surplus,
+      surplusRatio: null,
+      level: surplus > 0 ? 'strong' : 'fragile',
+    };
+  }
+
+  const surplusRatio = surplus / expenses;
+  const level: FinancialPositionLevel =
+    surplusRatio >= FINANCIAL_STRONG_RATIO
+      ? 'strong'
+      : surplusRatio >= FINANCIAL_STABLE_RATIO
+        ? 'stable'
+        : 'fragile';
+
+  return {
+    monthlyIncome: income,
+    monthlyExpenses: expenses,
+    surplus,
+    surplusRatio,
+    level,
+  };
+}
+
+// --- Dimension 2: Exposure Risk --------------------------------------------
+
+export interface ExposureRiskAssessment {
+  /** Cash within easy reach to gamble: spendings + savings. */
+  accessible: number;
+  /** Funds harder to touch (mortgage offset). */
+  protectedFunds: number;
+  /** Accessible cash expressed as months of monthly surplus (null if N/A). */
+  months: number | null;
+  level: RiskBand;
+}
+
+/**
+ * A vulnerability metric, not a judgement: how much money is realistically
+ * available to be gambled. Accessible cash (spendings + savings) is measured in
+ * months of monthly surplus — under one month is Low, one-to-three Moderate,
+ * beyond three High. Higher exposure means a larger potential downside.
+ */
+export function calculateExposureRisk(
+  spendings: number | null,
+  savings: number | null,
+  offset: number | null,
+  monthlySurplus: number,
+): ExposureRiskAssessment {
+  const accessible = Math.max(0, spendings ?? 0) + Math.max(0, savings ?? 0);
+  const protectedFunds = Math.max(0, offset ?? 0);
+
+  let level: RiskBand = 'low';
+  let months: number | null = null;
+
+  if (accessible <= 0) {
+    level = 'low';
+  } else if (monthlySurplus > 0) {
+    months = accessible / monthlySurplus;
+    level =
+      months > EXPOSURE_MONTHS_HIGH
+        ? 'high'
+        : months >= EXPOSURE_MONTHS_MODERATE
+          ? 'moderate'
+          : 'low';
+  } else {
+    // No surplus to divide by — fall back to absolute cash bands. With no
+    // monthly buffer, accessible cash is inherently riskier.
+    level =
+      accessible >= EXPOSURE_HIGH_CASH
+        ? 'high'
+        : accessible >= EXPOSURE_MODERATE_CASH
+          ? 'moderate'
+          : 'low';
+  }
+
+  return { accessible, protectedFunds, months, level };
+}
+
+// --- Dimension 3: Behavioural Risk -----------------------------------------
+
+export interface BehaviouralRiskAssessment {
+  level: RiskBand;
+  /** Sessions logged within the recent lookback window. */
+  recentSessions: number;
+  /** Urges logged within the recent lookback window. */
+  recentUrges: number;
+  /** Average intensity of those recent urges (0 when none). */
+  avgUrgeIntensity: number;
+  /** Days since the last gambling session, or null if none ever logged. */
+  daysSinceSlip: number | null;
+  inRecovery: boolean;
+}
+
+/**
+ * Relapse vulnerability — the most important dimension. Blends recent session
+ * frequency, urge frequency and intensity, days-since-slip and recovery state.
+ * Low = no recent gambling and steady urges; Moderate = recent urges or an
+ * isolated session; High = recent activity with multiple sessions and
+ * escalating urges.
+ */
+export function calculateBehaviouralRisk(input: {
+  lastGambleDate: string | null;
+  sessionDates: string[];
+  urges: { intensity: number; created_at: string }[];
+  today?: Date;
+  recentDays?: number;
+  recoveryWindowDays?: number;
+}): BehaviouralRiskAssessment {
+  const {
+    lastGambleDate,
+    sessionDates,
+    urges,
+    today = new Date(),
+    recentDays = BEHAVIOUR_RECENT_DAYS,
+    recoveryWindowDays = RECOVERY_WINDOW_DAYS,
+  } = input;
+
+  const cutoff = today.getTime() - recentDays * 86400000;
+  const recentSessions = sessionDates.filter((d) => toTime(d) >= cutoff).length;
+  const recentUrgeLogs = urges.filter((u) => toTime(u.created_at) >= cutoff);
+  const recentUrges = recentUrgeLogs.length;
+  const avgUrgeIntensity =
+    recentUrges === 0
+      ? 0
+      : recentUrgeLogs.reduce((acc, u) => acc + (u.intensity || 0), 0) /
+        recentUrges;
+
+  const daysSinceSlip = lastGambleDate
+    ? streakFromLastGamble(lastGambleDate, today)
+    : null;
+  const inRecovery =
+    daysSinceSlip !== null && daysSinceSlip < recoveryWindowDays;
+
+  // Points model — session frequency dominates, urges and recovery add weight.
+  let score = Math.min(recentSessions, 3) * 2; // 0, 2, 4, 6
+  if (recentUrges >= 1) score += 1;
+  if (avgUrgeIntensity >= URGE_INTENSITY_HIGH) score += 2;
+  else if (avgUrgeIntensity >= URGE_INTENSITY_MODERATE) score += 1;
+  if (recentUrges >= 4) score += 1; // many cravings in a short window
+  if (inRecovery) score += 1;
+
+  const level: RiskBand = score >= 5 ? 'high' : score >= 2 ? 'moderate' : 'low';
+
+  return {
+    level,
+    recentSessions,
+    recentUrges,
+    avgUrgeIntensity,
+    daysSinceSlip,
+    inRecovery,
+  };
+}
+
+// --- Impact Analysis --------------------------------------------------------
+
+export interface ImpactScore {
+  amount: number;
+  surplus: number;
+  /** Amount as a percentage of monthly surplus, or null when surplus ≤ 0. */
+  ratioPct: number | null;
+  level: ImpactLevel;
+}
+
+/**
+ * What a single gamble amount means against the monthly surplus. Replaces the
+ * safe-limit comparison entirely: it never says "within budget", only what
+ * share of the after-essentials surplus the amount represents. With no surplus,
+ * any spend is Severe.
+ */
+export function calculateImpactScore(
+  amount: number,
+  monthlySurplus: number,
+): ImpactScore {
+  const amt = Math.max(0, amount);
+
+  if (monthlySurplus <= 0) {
+    return {
+      amount: amt,
+      surplus: monthlySurplus,
+      ratioPct: null,
+      level: amt > 0 ? 'severe' : 'low',
+    };
+  }
+
+  const ratioPct = (amt / monthlySurplus) * 100;
+  const level: ImpactLevel =
+    ratioPct < IMPACT_LOW_PCT
+      ? 'low'
+      : ratioPct < IMPACT_MODERATE_PCT
+        ? 'moderate'
+        : ratioPct <= IMPACT_HIGH_PCT
+          ? 'high'
+          : 'severe';
+
+  return { amount: amt, surplus: monthlySurplus, ratioPct, level };
+}
+
+// --- Intervention Level (Risk State Matrix) --------------------------------
+
+export interface InterventionAssessment {
+  level: InterventionLevel;
+  /** Combined 0–6 score across the three dimensions (higher = more concern). */
+  score: number;
+}
+
+const FINANCIAL_POINTS: Record<FinancialPositionLevel, number> = {
+  strong: 0,
+  stable: 1,
+  fragile: 2,
+};
+const BAND_POINTS: Record<RiskBand, number> = { low: 0, moderate: 1, high: 2 };
+
+/**
+ * Combine the three dimensions into how hard the app should intervene.
+ * Behavioural risk is the most important signal, so a High reading there never
+ * resolves to Minimal intervention regardless of the financial picture.
+ */
+export function calculateInterventionLevel(
+  financial: FinancialPositionLevel,
+  exposure: RiskBand,
+  behavioural: RiskBand,
+): InterventionAssessment {
+  const score =
+    FINANCIAL_POINTS[financial] +
+    BAND_POINTS[exposure] +
+    BAND_POINTS[behavioural];
+
+  let level: InterventionLevel =
+    score <= 1 ? 'minimal' : score <= 4 ? 'reflection' : 'maximum';
+
+  if (behavioural === 'high' && level === 'minimal') level = 'reflection';
+
+  return { level, score };
 }
 
 /** Hours of work a dollar amount represents at a given hourly wage. */

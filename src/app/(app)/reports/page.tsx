@@ -1,4 +1,4 @@
-import { getAllBudgets, getSessions } from '@/lib/data';
+import { getSessions } from '@/lib/data';
 import { money, monthKey, sum, zonedDayKey } from '@/lib/calculations';
 import { BarChart, type BarDatum } from '@/components/BarChart';
 import { Banner, StatCard } from '@/components/ui';
@@ -14,14 +14,10 @@ interface MonthStat {
   total: number;
   daysGambled: number;
   biggestLoss: number;
-  allowance: number | null;
 }
 
 export default async function ReportsPage() {
-  const [sessions, budgets] = await Promise.all([
-    getSessions(),
-    getAllBudgets(),
-  ]);
+  const sessions = await getSessions();
 
   const now = new Date();
   const months: MonthStat[] = [];
@@ -39,14 +35,12 @@ export default async function ReportsPage() {
       (m, s) => Math.max(m, Number(s.amount)),
       0,
     );
-    const budget = budgets.find((b) => b.month === key);
     months.push({
       key,
       label: MONTH_LABELS[d.getMonth()],
       total,
       daysGambled: days,
       biggestLoss: biggest,
-      allowance: budget?.recommended_budget ?? null,
     });
   }
 
@@ -57,13 +51,10 @@ export default async function ReportsPage() {
       ? sum(prevMonths.map((m) => m.total)) / prevMonths.length
       : 0;
   const savedVsAvg = prevAvg - thisMonth.total;
-  const compliant =
-    thisMonth.allowance != null && thisMonth.total <= thisMonth.allowance;
 
   const chartData: BarDatum[] = months.map((m) => ({
     label: m.label,
     value: m.total,
-    budget: m.allowance,
   }));
 
   return (
@@ -78,19 +69,19 @@ export default async function ReportsPage() {
 
       {savedVsAvg > 0 && (
         <Banner tone="brand">
-          You saved {money(savedVsAvg)} this month compared to your previous
-          average. That&apos;s real progress.
+          You preserved {money(savedVsAvg)} this month compared to your recent
+          average. That&apos;s real money kept.
         </Banner>
       )}
       {savedVsAvg < 0 && prevAvg > 0 && (
         <Banner tone="warn">
           You spent {money(Math.abs(savedVsAvg))} more than your recent average.
-          You exceeded your plan — log it honestly and move forward.
+          No shame — notice the trend and keep going.
         </Banner>
       )}
 
       <div className="card">
-        <p className="muted mb-3">Last 6 months (dashed line = allowance)</p>
+        <p className="muted mb-3">Last 6 months</p>
         <BarChart data={chartData} />
       </div>
 
@@ -98,7 +89,7 @@ export default async function ReportsPage() {
         <StatCard
           label="Total this month"
           value={money(thisMonth.total)}
-          tone={compliant ? 'brand' : 'danger'}
+          tone={thisMonth.total > 0 ? 'danger' : 'brand'}
           icon="💸"
         />
         <StatCard
@@ -114,21 +105,17 @@ export default async function ReportsPage() {
           icon="🔺"
         />
         <StatCard
-          label="Budget"
+          label="vs recent average"
           value={
-            thisMonth.allowance == null
+            prevAvg === 0
               ? '—'
-              : compliant
-                ? 'On track'
-                : 'Over'
+              : savedVsAvg >= 0
+                ? `↓ ${money(savedVsAvg)}`
+                : `↑ ${money(Math.abs(savedVsAvg))}`
           }
-          sub={
-            thisMonth.allowance == null
-              ? 'no plan set'
-              : `${money(thisMonth.allowance)} allowance`
-          }
-          tone={compliant ? 'brand' : 'danger'}
-          icon={compliant ? '✅' : '⚠️'}
+          sub={prevAvg === 0 ? 'no history yet' : 'less is better'}
+          tone={prevAvg === 0 ? 'default' : savedVsAvg >= 0 ? 'brand' : 'danger'}
+          icon={savedVsAvg >= 0 ? '✅' : '⚠️'}
         />
       </div>
 
@@ -143,7 +130,7 @@ export default async function ReportsPage() {
               </span>
               <span
                 className={
-                  m.allowance != null && m.total > m.allowance
+                  prevAvg > 0 && m.total > prevAvg
                     ? 'font-semibold text-danger-400'
                     : 'font-semibold text-slate-100'
                 }

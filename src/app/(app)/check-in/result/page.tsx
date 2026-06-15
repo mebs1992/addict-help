@@ -1,15 +1,16 @@
 import Link from 'next/link';
-import { getCurrentBudget, getProfile, getSessions } from '@/lib/data';
+import { getProfile, getSessions } from '@/lib/data';
 import {
+  calculateFinancialPosition,
+  calculateImpactScore,
   closestOpportunity,
   hoursWorked,
   investedFutureValue,
   money,
   monthKey,
-  percentOverBudget,
   sum,
 } from '@/lib/calculations';
-import { INVEST_YEARS, RECOVERY_WINDOW_DAYS } from '@/lib/constants';
+import { IMPACT_LABELS, INVEST_YEARS, RECOVERY_WINDOW_DAYS } from '@/lib/constants';
 import { Banner } from '@/components/ui';
 
 export default async function CheckInResultPage({
@@ -18,11 +19,7 @@ export default async function CheckInResultPage({
   searchParams: { amount?: string };
 }) {
   const amount = Math.max(0, parseFloat(searchParams.amount || '0') || 0);
-  const [profile, budget, sessions] = await Promise.all([
-    getProfile(),
-    getCurrentBudget(),
-    getSessions(),
-  ]);
+  const [profile, sessions] = await Promise.all([getProfile(), getSessions()]);
 
   const wage = profile?.hourly_wage ?? 25;
   const hours = hoursWorked(amount, wage);
@@ -33,9 +30,11 @@ export default async function CheckInResultPage({
       .filter((s) => monthKey(new Date(s.gambled_at)) === monthKey())
       .map((s) => Number(s.amount)),
   );
-  const allowance = budget?.recommended_budget ?? 0;
-  const overPct = percentOverBudget(monthSpent, allowance);
-  const overBudget = allowance > 0 && monthSpent > allowance;
+  const financial = calculateFinancialPosition(
+    profile?.monthly_income ?? 0,
+    profile?.monthly_expenses ?? 0,
+  );
+  const impact = calculateImpactScore(amount, financial.surplus);
   const opp = closestOpportunity(amount);
 
   return (
@@ -55,8 +54,8 @@ export default async function CheckInResultPage({
           🌱 You&apos;re in recovery mode for the next {RECOVERY_WINDOW_DAYS} days
         </p>
         <p className="muted mt-1">
-          This week is about getting back on track, not starting from zero. Your
-          vault keeps growing, gently, while you find your feet.
+          This week is about getting back to stability, not starting from zero.
+          Your vault keeps growing, gently, while you find your feet.
         </p>
       </div>
 
@@ -89,16 +88,22 @@ export default async function CheckInResultPage({
         )}
 
         <div>
-          <p className="muted">This month you&apos;re now</p>
+          <p className="muted">In the context of your finances</p>
           <p
-            className={`text-3xl font-bold ${overBudget ? 'text-danger-400' : 'text-brand-400'}`}
+            className={`text-3xl font-bold ${
+              impact.level === 'low' ? 'text-brand-400' : 'text-danger-400'
+            }`}
           >
-            {overBudget
-              ? `${Math.round(overPct)}% over budget`
-              : `${Math.round(Math.abs(overPct))}% under budget`}
+            {impact.ratioPct === null
+              ? IMPACT_LABELS[impact.level]
+              : `${impact.ratioPct.toFixed(1)}% of your surplus`}
           </p>
           <p className="muted">
-            {money(monthSpent)} of {money(allowance)} allowance used.
+            {impact.ratioPct === null
+              ? 'You have no monthly surplus — this came out of essentials.'
+              : `${IMPACT_LABELS[impact.level]} · ${money(
+                  monthSpent,
+                )} logged this month.`}
           </p>
         </div>
       </div>

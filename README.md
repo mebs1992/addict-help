@@ -23,15 +23,15 @@ Built with **Next.js (App Router) · TypeScript · Tailwind CSS · Supabase
 
 | # | Feature | Where |
 |---|---------|-------|
-| 1 | **Monthly gambling budget** — 1% of disposable income, user-capped; screen turns red & requires acknowledgement when exceeded | `/budget`, `/dashboard` |
-| 2 | **Gambling check-in** — "I Gambled Today" → amount, venue, time, mood before/after, then hours-worked / invested-value / over-budget feedback | `/check-in` |
+| 1 | **Financial position + risk engine** — income, expenses & balances drive a three-dimension read (financial position / exposure / behavioural risk). No "safe gambling amount" — see the redesign note below | `/budget`, `/dashboard` |
+| 2 | **Gambling check-in + Decision Mirror** — "I Gambled Today" → amount, venue, time, mood; then a pre-commitment mirror showing financial impact (% of surplus, hours worked, goal impact), behavioural context and historical context before anything is logged | `/check-in` |
 | 3 | **Opportunity cost dashboard** — converts spend into real things (games, getaways, flights) | `/opportunity-cost` |
 | 4 | **Savings reward vault** — +$ for every gamble-free day, projected yearly savings | `/vault` |
 | 5 | **Streak system** — current / longest streak + 3d→1yr achievements | `/streak` |
 | 6 | **Future self** — upload a family / goal photo with a motivating caption | `/future-self` |
 | 7 | **Emergency pause** — "I Feel Like Gambling" → 10-minute timer showing losses, streak, goal & reasons | floating button on `/dashboard` |
 | 8 | **Accountability wall** — reasons to stop, worst loss, what it cost | `/accountability` |
-| 9 | **Monthly report** — totals, days gambled, biggest loss, compliance, vs-previous trend + charts | `/reports` |
+| 9 | **Monthly report** — totals, days gambled, biggest loss, vs-recent-average trend + charts | `/reports` |
 | 10 | **Consequence mode** — optional; categorise what each spend gave up | toggle in `/settings`, applied in `/check-in` |
 | 11 | **Reality check** — lifetime losses, hours worked, average / largest loss, yearly total | `/reality-check` |
 | 12 | **Positive reinforcement** — direct, factual, never insulting copy throughout | everywhere |
@@ -157,9 +157,29 @@ npm run lint       # next lint
 
 ## How the money math works (`src/lib/calculations.ts`)
 
-- **Disposable income** = annual income ÷ 12 − monthly expenses.
-- **Recommended budget** = disposable × budget% (default 1%), capped at your
-  hard cap.
+The **Behavioural Risk Engine (v2.0)** replaced the old gambling-allowance model.
+The app no longer answers "how much can I safely gamble"; it answers how
+resilient, exposed and behaviourally vulnerable you are, and what a decision
+means. Three independent dimensions plus an impact score combine into an
+intervention level:
+
+- **Financial position** (`calculateFinancialPosition`) — monthly surplus
+  (income − expenses) as a share of expenses: ≥50% Strong, ≥20% Stable, else
+  Fragile. A resilience read, *not* a permitted-spend amount.
+- **Exposure risk** (`calculateExposureRisk`) — accessible cash
+  (spendings + savings) in months of surplus: <1 Low, 1–3 Moderate, >3 High.
+- **Behavioural risk** (`calculateBehaviouralRisk`) — relapse vulnerability from
+  recent sessions, urge frequency/intensity, days-since-slip and recovery state.
+- **Impact score** (`calculateImpactScore`) — a gamble amount as a % of monthly
+  surplus: <2% Low, 2–10% Moderate, 10–20% High, >20% Severe.
+- **Intervention level** (`calculateInterventionLevel`) — combines the three
+  dimensions (behavioural risk weighted heaviest) into Minimal / Reflection +
+  friction / Maximum.
+
+`guardrailsFor` / `spendZone` / `exposureRisk` (the old "safe limit" / "ceiling"
+model) are **deprecated** and kept only for migration compatibility — no UI
+reads them.
+
 - **Hours worked** = amount ÷ hourly wage.
 - **Invested value** = future value of investing the amount monthly for 10
   years at 7% p.a., compounded monthly.

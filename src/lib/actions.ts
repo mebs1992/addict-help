@@ -89,9 +89,10 @@ async function addXp(amount: number) {
 }
 
 // ---------------------------------------------------------------------------
-// Feature 1: Simple budget setup — monthly income and essential expenses.
-// The app derives tiered guardrails (a safe limit + a hard ceiling) from the
-// disposable income left after expenses.
+// Feature 1: Financial setup — monthly income, essential expenses and balances.
+// These feed the v2 risk engine (financial position + exposure). The legacy
+// monthly_budgets row is still written for migration compatibility only; no UI
+// reads its "safe limit" / "ceiling" any more.
 // ---------------------------------------------------------------------------
 export async function saveBudget(formData: FormData) {
   if (!allow('saveBudget')) return;
@@ -115,9 +116,9 @@ export async function saveBudget(formData: FormData) {
     })
     .eq('id', USER_ID);
 
-  // Persist the derived safe limit as this month's allowance so the rest of the
-  // app (check-in result, reports) keeps a single coherent number to compare
-  // spending against. `max_budget` carries the hard ceiling.
+  // Legacy bookkeeping (deprecated): older rows persisted a "safe limit" and
+  // "ceiling". Kept so historical monthly_budgets data stays consistent — the
+  // redesigned UI no longer surfaces these numbers.
   await supabase.from('monthly_budgets').upsert(
     {
       user_id: USER_ID,

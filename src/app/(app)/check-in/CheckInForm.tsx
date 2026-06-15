@@ -4,15 +4,29 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useFormStatus } from 'react-dom';
 import { logGamblingSession } from '@/lib/actions';
-import { CONSEQUENCE_CATEGORIES, INVEST_YEARS, MOODS } from '@/lib/constants';
+import { CONSEQUENCE_CATEGORIES, IMPACT_LABELS, MOODS } from '@/lib/constants';
 import {
+  calculateImpactScore,
   closestOpportunity,
   hoursWorked,
-  investedFutureValue,
   money,
   opportunityBreakdown,
 } from '@/lib/calculations';
+import type { ImpactLevel } from '@/lib/types';
 import { EmergencyPause } from '@/components/EmergencyPause';
+
+const IMPACT_TEXT: Record<ImpactLevel, string> = {
+  low: 'text-brand-400',
+  moderate: 'text-warn-400',
+  high: 'text-danger-400',
+  severe: 'text-danger-400',
+};
+const IMPACT_PILL: Record<ImpactLevel, string> = {
+  low: 'bg-brand-500/20 text-brand-400',
+  moderate: 'bg-warn-500/20 text-warn-400',
+  high: 'bg-danger-500/20 text-danger-400',
+  severe: 'bg-danger-500/30 text-danger-400',
+};
 
 function ProceedButton() {
   const { pending } = useFormStatus();
@@ -50,10 +64,45 @@ function MoodGrid({ name, label }: { name: string; label: string }) {
   );
 }
 
+function MirrorRow({
+  label,
+  value,
+  tone = 'default',
+}: {
+  label: string;
+  value: string;
+  tone?: 'default' | 'danger' | 'warn' | 'brand';
+}) {
+  const cls =
+    tone === 'danger'
+      ? 'text-danger-400'
+      : tone === 'warn'
+        ? 'text-warn-400'
+        : tone === 'brand'
+          ? 'text-brand-400'
+          : 'text-slate-100';
+  return (
+    <div className="flex items-center justify-between gap-3 py-1.5">
+      <span className="muted">{label}</span>
+      <span className={`text-right font-semibold ${cls}`}>{value}</span>
+    </div>
+  );
+}
+
 export function CheckInForm({
   consequenceMode,
   defaultDateTime,
   hourlyWage,
+  monthlySurplus,
+  daysSinceLastGamble,
+  inRecovery,
+  recoveryDay,
+  recoveryDaysLeft,
+  recentUrges,
+  avgLoss,
+  biggestLoss,
+  thisMonthTotal,
+  prevMonthlyAvg,
   monthlyLosses,
   currentStreak,
   goalTitle,
@@ -64,6 +113,16 @@ export function CheckInForm({
   consequenceMode: boolean;
   defaultDateTime: string;
   hourlyWage: number;
+  monthlySurplus: number;
+  daysSinceLastGamble: number | null;
+  inRecovery: boolean;
+  recoveryDay: number;
+  recoveryDaysLeft: number;
+  recentUrges: number;
+  avgLoss: number;
+  biggestLoss: number;
+  thisMonthTotal: number;
+  prevMonthlyAvg: number;
   monthlyLosses: number;
   currentStreak: number;
   goalTitle: string | null;
@@ -78,9 +137,15 @@ export function CheckInForm({
 
   const amountNum = Math.max(0, parseFloat(amount) || 0);
   const hours = hoursWorked(amountNum, hourlyWage);
-  const futureValue = investedFutureValue(amountNum);
   const breakdown = opportunityBreakdown(amountNum, 3);
   const closest = closestOpportunity(amountNum);
+  const impact = calculateImpactScore(amountNum, monthlySurplus);
+
+  const goalRemaining = Math.max(0, goalTarget - goalSaved);
+  const goalImpactPct =
+    goalRemaining > 0 ? (amountNum / goalRemaining) * 100 : null;
+
+  const trendDelta = thisMonthTotal + amountNum - prevMonthlyAvg;
 
   return (
     <>
@@ -176,14 +241,15 @@ export function CheckInForm({
             disabled={amountNum <= 0}
             className="btn-primary w-full py-3.5 disabled:opacity-50"
           >
-            See what this really costs →
+            See what this really means →
           </button>
           <p className="muted text-center">
-            We&apos;ll show you the real cost before anything is logged.
+            We&apos;ll show you the full picture before anything is logged.
           </p>
         </div>
 
-        {/* Step 2: the pre-confirmation simulation. */}
+        {/* Step 2: the Decision Mirror — financial, behavioural and historical
+            context shown before anything is committed. */}
         {step === 2 && (
           <div className="space-y-5">
             <div className="text-center">
@@ -193,55 +259,115 @@ export function CheckInForm({
               </p>
             </div>
 
-            <div className="space-y-3">
-              <div className="card-tight">
-                <p className="muted">That&apos;s</p>
-                <p className="text-2xl font-bold text-warn-400">
-                  {hours.toFixed(1)} hours
-                </p>
-                <p className="muted">of your life at work.</p>
+            {/* Financial impact */}
+            <div className="card-tight">
+              <div className="flex items-center justify-between">
+                <p className="label mb-0">Financial impact</p>
+                <span className={`pill ${IMPACT_PILL[impact.level]}`}>
+                  {IMPACT_LABELS[impact.level]}
+                </span>
               </div>
-
-              <div className="card-tight">
-                <p className="muted">
-                  Invested monthly for {INVEST_YEARS} years it could become
-                </p>
-                <p className="text-2xl font-bold text-brand-400">
-                  {money(futureValue)}
-                </p>
+              <p className={`mt-2 text-2xl font-bold ${IMPACT_TEXT[impact.level]}`}>
+                {impact.ratioPct === null
+                  ? 'No surplus to draw from'
+                  : `${impact.ratioPct.toFixed(1)}% of your surplus`}
+              </p>
+              <p className="muted mt-1">
+                {impact.ratioPct === null
+                  ? 'You have no monthly surplus after essentials — this comes straight out of the things you need.'
+                  : `This represents ${impact.ratioPct.toFixed(
+                      1,
+                    )}% of your monthly surplus after essential expenses.`}
+              </p>
+              <div className="mt-3 border-t border-white/5 pt-2">
+                <MirrorRow
+                  label="Hours of your life at work"
+                  value={`${hours.toFixed(1)} hrs`}
+                  tone="warn"
+                />
+                {goalImpactPct !== null && goalTitle && (
+                  <MirrorRow
+                    label={`Toward "${goalTitle}"`}
+                    value={`${goalImpactPct.toFixed(0)}% of what's left`}
+                    tone="brand"
+                  />
+                )}
+                {breakdown.length > 0 ? (
+                  <MirrorRow
+                    label="Could buy instead"
+                    value={breakdown
+                      .map((b) => `${b.quantity} ${b.label}`)
+                      .join(', ')}
+                  />
+                ) : (
+                  closest && (
+                    <MirrorRow
+                      label="About the same as"
+                      value={`one ${closest.label}`}
+                    />
+                  )
+                )}
               </div>
+            </div>
 
-              {breakdown.length > 0 ? (
-                <div className="card-tight">
-                  <p className="muted mb-2">It could buy instead</p>
-                  <ul className="space-y-1.5">
-                    {breakdown.map((item) => (
-                      <li
-                        key={item.label}
-                        className="flex items-center gap-3 text-sm"
-                      >
-                        <span className="text-lg">{item.emoji}</span>
-                        <span className="font-medium">
-                          {item.quantity} × {item.label}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : (
-                closest && (
-                  <div className="card-tight">
-                    <p className="muted">That&apos;s about</p>
-                    <p className="text-lg font-semibold">
-                      {closest.emoji} one {closest.label}
-                    </p>
-                  </div>
-                )
+            {/* Behavioural context */}
+            <div className="card-tight">
+              <p className="label">Behavioural context</p>
+              <MirrorRow
+                label="Days since last session"
+                value={
+                  daysSinceLastGamble === null
+                    ? 'none logged'
+                    : `${daysSinceLastGamble} days`
+                }
+                tone="brand"
+              />
+              <MirrorRow
+                label="Urges logged (last 7 days)"
+                value={`${recentUrges}`}
+              />
+              {inRecovery && (
+                <MirrorRow
+                  label="Recovery mode"
+                  value={`Day ${recoveryDay} · ${recoveryDaysLeft}d left`}
+                  tone="warn"
+                />
               )}
             </div>
 
+            {/* Historical context */}
+            {(avgLoss > 0 || biggestLoss > 0) && (
+              <div className="card-tight">
+                <p className="label">Historical context</p>
+                <MirrorRow
+                  label="Your average session"
+                  value={money(avgLoss)}
+                />
+                <MirrorRow
+                  label="Your biggest single loss"
+                  value={money(biggestLoss)}
+                  tone="danger"
+                />
+                {prevMonthlyAvg > 0 && (
+                  <MirrorRow
+                    label="This month vs recent average"
+                    value={
+                      trendDelta > 0
+                        ? `↑ ${money(Math.abs(trendDelta))} above`
+                        : `↓ ${money(Math.abs(trendDelta))} below`
+                    }
+                    tone={trendDelta > 0 ? 'danger' : 'brand'}
+                  />
+                )}
+              </div>
+            )}
+
             <p className="muted text-center">
-              Nothing has happened yet. You can still walk away.
+              Nothing has happened yet. Walking away preserves{' '}
+              <span className="font-semibold text-brand-400">
+                {money(amountNum)}
+              </span>
+              .
             </p>
 
             <div className="space-y-3">
@@ -250,7 +376,7 @@ export function CheckInForm({
                 onClick={() => setPauseOpen(true)}
                 className="btn-primary w-full py-3.5"
               >
-                ⏳ Pause 10 minutes first
+                ⏳ Start a 10-minute pause
               </button>
               <Link href="/urge" className="btn-ghost w-full py-3.5">
                 🌊 Log the urge instead (no money spent)

@@ -25,6 +25,24 @@ export type UrgeTrigger =
 
 export type RiskOutcome = 'safe' | 'paused' | 'support';
 
+// ---------------------------------------------------------------------------
+// Behavioural Risk Engine (Redesign v2.0). Three independent dimensions plus an
+// impact level and a combined intervention level. These replace the old
+// gambling-allowance guardrails — see src/lib/calculations.ts.
+// ---------------------------------------------------------------------------
+
+/** Financial resilience: how big the monthly buffer is relative to expenses. */
+export type FinancialPositionLevel = 'strong' | 'stable' | 'fragile';
+
+/** A three-step risk band, shared by exposure and behavioural risk. */
+export type RiskBand = 'low' | 'moderate' | 'high';
+
+/** What a single gamble amount means against the monthly surplus. */
+export type ImpactLevel = 'low' | 'moderate' | 'high' | 'severe';
+
+/** How hard the app should intervene, derived from the three dimensions. */
+export type InterventionLevel = 'minimal' | 'reflection' | 'maximum';
+
 /**
  * A user-defined high-risk time window that arms the pre-commitment gate.
  * `days` is 0=Sun … 6=Sat; an empty array means "every day". Times are local
