@@ -3,19 +3,28 @@
 import {
   ACHIEVEMENTS,
   APP_TIMEZONE,
+  BEHAVIOUR_WINDOW_DAYS,
+  DAY_PARTS,
   EXPOSURE_HIGH_CASH,
   EXPOSURE_HIGH_MONTHS,
   EXPOSURE_MODERATE_CASH,
   EXPOSURE_MODERATE_MONTHS,
   GUARDRAIL_CEILING_PCT,
   GUARDRAIL_SAFE_PCT,
+  INSIGHT_MIN_EVENTS,
   INVEST_ANNUAL_RETURN,
   INVEST_YEARS,
   LEVELS,
   OPPORTUNITY_ITEMS,
+  RECOVERY_REDUCED_VAULT_DAYS,
+  RECOVERY_VAULT_RATE,
+  RECOVERY_WINDOW_DAYS,
+  STABILITY_BANDS,
+  STABILITY_TARGET_DAYS,
+  type DayPart,
   type OpportunityItem,
 } from './constants';
-import type { HighRiskWindow, UrgeTrigger } from './types';
+import type { HighRiskWindow, MoodValue, UrgeTrigger } from './types';
 
 export interface Guardrails {
   /** Monthly take-home income. */
@@ -395,4 +404,221 @@ export function summariseUrges(
     avgIntensity: totalIntensity / logs.length,
     topTrigger,
   };
+}
+
+/** Milliseconds for an ISO timestamp, or NaN if unparseable. */
+function toTime(iso: string): number {
+  return new Date(iso).getTime();
+}
+
+// ---------------------------------------------------------------------------
+// Recovery Mode (Feature 7.2). A slip opens a supportive window rather than
+// zeroing everything out. State is derived from the last slip date — no stored
+// flag — the same way streak and vault recompute every load.
+// ---------------------------------------------------------------------------
+export interface RecoveryStatus {
+  inRecovery: boolean;
+  day: number; // 1-based day within the window (0 when not in recovery)
+  daysLeft: number;
+}
+
+export function recoveryStatus(
+  lastGambleDate: string | null,
+  today: Date = new Date(),
+  windowDays: number = RECOVERY_WINDOW_DAYS,
+): RecoveryStatus {
+  if (!lastGambleDate) return { inRecovery: false, day: 0, daysLeft: 0 };
+  const since = streakFromLastGamble(lastGambleDate, today);
+  if (since >= windowDays) return { inRecovery: false, day: 0, daysLeft: 0 };
+  return { inRecovery: true, day: since + 1, daysLeft: windowDays - since };
+}
+
+/**
+ * Vault balance for a run of gamble-free days. After a slip the first few days
+ * earn at a reduced rate (recovery is gentle), then the full daily amount. A
+ * never-slipped run always earns the full rate.
+ */
+export function vaultBalance(
+  gambleFreeDays: number,
+  daily: number,
+  hasSlipped: boolean,
+  reducedDays: number = RECOVERY_REDUCED_VAULT_DAYS,
+  reducedRate: number = RECOVERY_VAULT_RATE,
+): number {
+  const free = Math.max(0, gambleFreeDays);
+  if (!hasSlipped) return free * daily;
+  const discounted = Math.min(free, reducedDays);
+  return discounted * daily * reducedRate + (free - discounted) * daily;
+}
+
+// ---------------------------------------------------------------------------
+// Composite behaviour model (Spec §8). Stability over streak-as-success:
+// recovery consistency, urge awareness and days-since-slip blended into one
+// index. All inputs are plain arrays so this stays pure and testable.
+// ---------------------------------------------------------------------------
+
+/** Distinct gamble-free share of the recent window, as a 0–100 score. */
+export function recoveryConsistencyScore(
+  sessionDates: string[],
+  today: Date = new Date(),
+  windowDays: number = BEHAVIOUR_WINDOW_DAYS,
+): number {
+  const cutoff = today.getTime() - windowDays * 86400000;
+  const days = new Set<string>();
+  for (const d of sessionDates) {
+    const t = toTime(d);
+    if (Number.isFinite(t) && t >= cutoff) days.add(zonedDayKey(new Date(d)));
+  }
+  const gambleDays = Math.min(days.size, windowDays);
+  return Math.round(((windowDays - gambleDays) / windowDays) * 100);
+}
+
+export interface BehaviourModel {
+  daysSinceSlip: number | null; // null = no slip ever recorded
+  recoveryConsistency: number; // 0–100
+  urgeAwareness: number; // 0–100
+  stabilityIndex: number; // 0–100 composite
+  stabilityLabel: string;
+  events: number; // recent activity feeding the model
+  hasSignal: boolean; // enough data to be meaningful
+}
+
+export function behaviourModel(input: {
+  lastGambleDate: string | null;
+  sessionDates: string[];
+  urgeDates: string[];
+  riskEventCount?: number;
+  today?: Date;
+  windowDays?: number;
+}): BehaviourModel {
+  const {
+    lastGambleDate,
+    sessionDates,
+    urgeDates,
+    riskEventCount = 0,
+    today = new Date(),
+    windowDays = BEHAVIOUR_WINDOW_DAYS,
+  } = input;
+  const cutoff = today.getTime() - windowDays * 86400000;
+  const recentSessions = sessionDates.filter((d) => toTime(d) >= cutoff).length;
+  const recentUrges = urgeDates.filter((d) => toTime(d) >= cutoff).length;
+
+  const daysSinceSlip = lastGambleDate
+    ? streakFromLastGamble(lastGambleDate, today)
+    : null;
+
+  const recoveryConsistency = recoveryConsistencyScore(
+    sessionDates,
+    today,
+    windowDays,
+  );
+
+  const awareTotal = recentUrges + recentSessions;
+  const urgeAwareness =
+    awareTotal === 0 ? 0 : Math.round((recentUrges / awareTotal) * 100);
+
+  const streakFactor =
+    daysSinceSlip === null
+      ? 100
+      : Math.min(100, (daysSinceSlip / STABILITY_TARGET_DAYS) * 100);
+
+  const stabilityIndex = Math.round(
+    0.4 * recoveryConsistency + 0.3 * urgeAwareness + 0.3 * streakFactor,
+  );
+  const stabilityLabel =
+    STABILITY_BANDS.find((b) => stabilityIndex < b.ceiling)?.label ?? 'Strong';
+
+  const events = recentSessions + recentUrges + riskEventCount;
+
+  return {
+    daysSinceSlip,
+    recoveryConsistency,
+    urgeAwareness,
+    stabilityIndex,
+    stabilityLabel,
+    events,
+    hasSignal: events >= INSIGHT_MIN_EVENTS,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Behavioural insight engine (Feature 7.5). Pure roll-ups over the data Phase 1
+// collects: when risk clusters, what triggers it, and how mood maps to spend.
+// ---------------------------------------------------------------------------
+function dayPartForHour(hour: number): DayPart {
+  return (
+    DAY_PARTS.find((p) =>
+      p.startHour < p.endHour
+        ? hour >= p.startHour && hour < p.endHour
+        : hour >= p.startHour || hour < p.endHour,
+    ) ?? DAY_PARTS[0]
+  );
+}
+
+export interface DayPartCount {
+  part: DayPart;
+  count: number;
+}
+
+/** Which parts of the day risk events cluster in, busiest first. */
+export function riskTimeWindows(
+  timestamps: string[],
+  timeZone: string = APP_TIMEZONE,
+): DayPartCount[] {
+  const counts = new Map<string, number>();
+  for (const iso of timestamps) {
+    const t = toTime(iso);
+    if (!Number.isFinite(t)) continue;
+    const part = dayPartForHour(zonedParts(new Date(iso), timeZone).hour);
+    counts.set(part.key, (counts.get(part.key) ?? 0) + 1);
+  }
+  return DAY_PARTS.map((part) => ({ part, count: counts.get(part.key) ?? 0 }))
+    .filter((x) => x.count > 0)
+    .sort((a, b) => b.count - a.count);
+}
+
+export interface TriggerCount {
+  trigger: UrgeTrigger;
+  count: number;
+}
+
+/** Urge triggers ranked by frequency. */
+export function rankTriggers(triggers: (UrgeTrigger | null)[]): TriggerCount[] {
+  const counts = new Map<UrgeTrigger, number>();
+  for (const t of triggers) {
+    if (t) counts.set(t, (counts.get(t) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([trigger, count]) => ({ trigger, count }))
+    .sort((a, b) => b.count - a.count);
+}
+
+export interface MoodSpend {
+  mood: MoodValue;
+  total: number;
+  count: number;
+}
+
+/** Total spend grouped by the mood logged before each session. */
+export function moodSpendBreakdown(
+  sessions: { mood_before: MoodValue | null; amount: number }[],
+): MoodSpend[] {
+  const map = new Map<MoodValue, { total: number; count: number }>();
+  for (const s of sessions) {
+    if (!s.mood_before) continue;
+    const cur = map.get(s.mood_before) ?? { total: 0, count: 0 };
+    cur.total += Number(s.amount) || 0;
+    cur.count += 1;
+    map.set(s.mood_before, cur);
+  }
+  return [...map.entries()]
+    .map(([mood, v]) => ({ mood, ...v }))
+    .sort((a, b) => b.total - a.total);
+}
+
+/** Deterministically rotate through a set of messages, advancing daily. */
+export function rotatingMessage(messages: string[], date: Date = new Date()): string {
+  if (!messages.length) return '';
+  const idx = Math.floor(date.getTime() / 86400000) % messages.length;
+  return messages[idx];
 }

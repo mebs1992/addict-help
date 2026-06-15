@@ -11,6 +11,7 @@ import {
   hoursWorked,
   monthKey,
   streakFromLastGamble,
+  vaultBalance,
 } from './calculations';
 import {
   ACHIEVEMENTS,
@@ -269,7 +270,9 @@ export async function syncProgress() {
   const current = streakFromLastGamble(streak.last_gamble_date, today);
   const effectiveCurrent = streak.last_gamble_date ? current : daysSinceStart;
   const longest = Math.max(streak.longest_streak ?? 0, effectiveCurrent);
-  const vault = gambleFreeDays * daily;
+  // Recovery Mode (7.2): after a slip the first few gamble-free days earn the
+  // vault at a gentler rate, so a slip never wipes the reward to zero.
+  const vault = vaultBalance(gambleFreeDays, daily, !!streak.last_gamble_date);
 
   await supabase
     .from('streaks')

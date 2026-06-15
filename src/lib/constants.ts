@@ -155,3 +155,56 @@ export const LEVELS: LevelDef[] = [
 
 // Emergency pause length (Feature 7), in seconds.
 export const EMERGENCY_PAUSE_SECONDS = 10 * 60;
+
+// ---------------------------------------------------------------------------
+// Recovery Mode (Feature 7.2) — a slip starts a supportive window instead of a
+// shame spiral. The vault keeps filling, just gently, for the first few days.
+// ---------------------------------------------------------------------------
+export const RECOVERY_WINDOW_DAYS = 7;
+export const RECOVERY_REDUCED_VAULT_DAYS = 3; // gentle vault rate for this many days
+export const RECOVERY_VAULT_RATE = 0.5; // fraction of the daily vault during recovery
+
+// Rotating, identity-based messages shown during recovery (Feature 7.6, light).
+export const RECOVERY_MESSAGES = [
+  'A slip is a moment, not a verdict. You came back — that is the whole point.',
+  'Recovery is a skill you are practising right now, today.',
+  'The person you are becoming would be proud you logged it and kept going.',
+  'One session does not erase weeks of work. Steady on.',
+  'You are not starting over. You are continuing, wiser.',
+];
+
+// ---------------------------------------------------------------------------
+// Composite behaviour model (Spec §8) — stability over streak-as-success.
+// ---------------------------------------------------------------------------
+export const BEHAVIOUR_WINDOW_DAYS = 30; // lookback for the recent-behaviour scores
+export const STABILITY_TARGET_DAYS = 30; // days-since-slip that maxes the streak factor
+// Need at least this many recent events (sessions + urges + risk gates) before
+// the insight engine / scores claim to "know" your patterns.
+export const INSIGHT_MIN_EVENTS = 4;
+
+// Stability index → friendly band. Ordered low → high; first match by ceiling.
+export const STABILITY_BANDS: { ceiling: number; label: string }[] = [
+  { ceiling: 40, label: 'Finding your feet' },
+  { ceiling: 70, label: 'Steadying' },
+  { ceiling: 90, label: 'Stable' },
+  { ceiling: 101, label: 'Strong' },
+];
+
+// ---------------------------------------------------------------------------
+// Behavioural insight engine (Feature 7.5) — parts of the day events cluster in.
+// `endHour` is exclusive; the last part wraps past midnight.
+// ---------------------------------------------------------------------------
+export interface DayPart {
+  key: string;
+  label: string;
+  emoji: string;
+  startHour: number;
+  endHour: number;
+}
+
+export const DAY_PARTS: DayPart[] = [
+  { key: 'morning', label: 'Mornings', emoji: '🌅', startHour: 5, endHour: 12 },
+  { key: 'afternoon', label: 'Afternoons', emoji: '☀️', startHour: 12, endHour: 17 },
+  { key: 'evening', label: 'Evenings', emoji: '🌆', startHour: 17, endHour: 22 },
+  { key: 'late', label: 'Late nights', emoji: '🌙', startHour: 22, endHour: 5 },
+];
