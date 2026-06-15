@@ -12,31 +12,36 @@ import {
   monthKey,
   streakFromLastGamble,
   vaultBalance,
+  zonedDayKey,
 } from './calculations';
+import * as v from './validation';
+import { allow } from './rateLimit';
 import {
   ACHIEVEMENTS,
+  CONSEQUENCE_CATEGORIES,
   GUARDRAIL_SAFE_PCT,
+  MOODS,
   URGE_TRIGGERS,
   XP,
 } from './constants';
 import type {
+  AccountabilityType,
   GamblingSession,
   HighRiskWindow,
   RiskOutcome,
-  UrgeTrigger,
 } from './types';
 
 const USER_ID = PERSONAL_USER_ID;
 
-function num(v: FormDataEntryValue | null, fallback = 0): number {
-  const n = parseFloat(String(v ?? ''));
-  return Number.isFinite(n) ? n : fallback;
-}
-
 const TIME_RE = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
-const URGE_TRIGGER_VALUES = new Set<UrgeTrigger>(
-  URGE_TRIGGERS.map((t) => t.value),
-);
+const MOOD_VALUES = MOODS.map((m) => m.value);
+const CONSEQUENCE_VALUES = CONSEQUENCE_CATEGORIES.map((c) => c.value);
+const ACCOUNTABILITY_TYPES: AccountabilityType[] = [
+  'reason',
+  'worst_loss',
+  'cost',
+];
+const URGE_TRIGGER_VALUES = URGE_TRIGGERS.map((t) => t.value);
 
 /** Coerce arbitrary parsed JSON into a clean, storable high-risk window list. */
 function sanitizeWindows(raw: unknown): HighRiskWindow[] {
@@ -89,13 +94,14 @@ async function addXp(amount: number) {
 // disposable income left after expenses.
 // ---------------------------------------------------------------------------
 export async function saveBudget(formData: FormData) {
+  if (!allow('saveBudget')) return;
   const supabase = createClient();
 
-  const monthlyIncome = num(formData.get('monthly_income'));
-  const monthlyExpenses = num(formData.get('monthly_expenses'));
-  const spendings = num(formData.get('spendings_balance'));
-  const savings = num(formData.get('savings_balance'));
-  const offset = num(formData.get('offset_balance'));
+  const monthlyIncome = v.amount(formData.get('monthly_income'));
+  const monthlyExpenses = v.amount(formData.get('monthly_expenses'));
+  const spendings = v.amount(formData.get('spendings_balance'));
+  const savings = v.amount(formData.get('savings_balance'));
+  const offset = v.amount(formData.get('offset_balance'));
   const g = guardrailsFor(monthlyIncome, monthlyExpenses);
 
   await supabase
@@ -129,6 +135,7 @@ export async function saveBudget(formData: FormData) {
 }
 
 export async function acknowledgeOverBudget() {
+  if (!allow('acknowledgeOverBudget')) return;
   const supabase = createClient();
   await supabase
     .from('monthly_budgets')
@@ -142,17 +149,15 @@ export async function acknowledgeOverBudget() {
 // Feature 2 + 10: Log a gambling session
 // ---------------------------------------------------------------------------
 export async function logGamblingSession(formData: FormData) {
+  if (!allow('logGamblingSession')) return;
   const supabase = createClient();
 
-  const amount = num(formData.get('amount'));
-  const venue = (formData.get('venue') as string) || null;
-  const gambledAtRaw = formData.get('gambled_at') as string;
-  const gambledAt = gambledAtRaw
-    ? new Date(gambledAtRaw).toISOString()
-    : new Date().toISOString();
-  const moodBefore = (formData.get('mood_before') as string) || null;
-  const moodAfter = (formData.get('mood_after') as string) || null;
-  const gaveUp = (formData.get('gave_up_category') as string) || null;
+  const amount = v.amount(formData.get('amount'), 1_000_000);
+  const venue = v.text(formData.get('venue'), 120);
+  const gambledAt = v.timestamp(formData.get('gambled_at'));
+  const moodBefore = v.oneOf(formData.get('mood_before'), MOOD_VALUES);
+  const moodAfter = v.oneOf(formData.get('mood_after'), MOOD_VALUES);
+  const gaveUp = v.oneOf(formData.get('gave_up_category'), CONSEQUENCE_VALUES);
 
   const { data: profile } = await supabase
     .from('profiles')
@@ -180,7 +185,7 @@ export async function logGamblingSession(formData: FormData) {
     .eq('user_id', USER_ID)
     .maybeSingle();
 
-  const gambleDate = gambledAt.slice(0, 10);
+  const gambleDate = zonedDayKey(new Date(gambledAt));
   const priorCurrent = streak
     ? streakFromLastGamble(streak.last_gamble_date, new Date(gambledAt))
     : 0;
@@ -207,6 +212,7 @@ export async function logGamblingSession(formData: FormData) {
 // stays date-based — but it rewards showing up. Awards XP at most once per day.
 // ---------------------------------------------------------------------------
 export async function logCleanDay() {
+  if (!allow('logCleanDay')) return;
   const supabase = createClient();
   const today = dayKey();
 
@@ -262,7 +268,7 @@ export async function syncProgress() {
 
   const distinctGamblingDays = new Set(
     ((sessions as Pick<GamblingSession, 'gambled_at'>[]) ?? []).map((s) =>
-      new Date(s.gambled_at).toISOString().slice(0, 10),
+      zonedDayKey(new Date(s.gambled_at)),
     ),
   ).size;
 
@@ -301,10 +307,11 @@ export async function syncProgress() {
 // Feature 8: Accountability wall
 // ---------------------------------------------------------------------------
 export async function addAccountabilityEntry(formData: FormData) {
+  if (!allow('addAccountabilityEntry')) return;
   const supabase = createClient();
-  const entryType = formData.get('entry_type') as string;
-  const content = ((formData.get('content') as string) || '').trim();
-  if (!content) return;
+  const entryType = v.oneOf(formData.get('entry_type'), ACCOUNTABILITY_TYPES);
+  const content = v.text(formData.get('content'), 500);
+  if (!entryType || !content) return;
   await supabase.from('accountability_entries').insert({
     user_id: USER_ID,
     entry_type: entryType,
@@ -315,8 +322,10 @@ export async function addAccountabilityEntry(formData: FormData) {
 }
 
 export async function deleteAccountabilityEntry(formData: FormData) {
+  if (!allow('deleteAccountabilityEntry')) return;
   const supabase = createClient();
-  const id = formData.get('id') as string;
+  const id = v.text(formData.get('id'), 64);
+  if (!id) return;
   await supabase
     .from('accountability_entries')
     .delete()
@@ -329,12 +338,15 @@ export async function deleteAccountabilityEntry(formData: FormData) {
 // Feature 6: Future Self (server-side image upload to Storage)
 // ---------------------------------------------------------------------------
 export async function saveFutureSelf(formData: FormData) {
+  if (!allow('saveFutureSelf')) return;
   const supabase = createClient();
-  const caption = (formData.get('caption') as string) || null;
+  const caption = v.text(formData.get('caption'), 280);
   const update: Record<string, unknown> = { future_self_caption: caption };
 
   const file = formData.get('photo') as File | null;
-  if (file && typeof file === 'object' && file.size > 0) {
+  const isImage = !!file && (file.type || '').startsWith('image/');
+  const underLimit = !!file && file.size <= 8 * 1024 * 1024; // 8 MB cap
+  if (file && typeof file === 'object' && file.size > 0 && isImage && underLimit) {
     const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
     const path = `${USER_ID}/${Date.now()}.${ext}`;
     const bytes = new Uint8Array(await file.arrayBuffer());
@@ -359,11 +371,12 @@ export async function saveFutureSelf(formData: FormData) {
 // Goals
 // ---------------------------------------------------------------------------
 export async function saveGoal(formData: FormData) {
+  if (!allow('saveGoal')) return;
   const supabase = createClient();
-  const id = (formData.get('id') as string) || null;
-  const title = ((formData.get('title') as string) || '').trim();
-  const target = num(formData.get('target_amount'));
-  const saved = num(formData.get('saved_amount'));
+  const id = v.text(formData.get('id'), 64);
+  const title = v.text(formData.get('title'), 80);
+  const target = v.amount(formData.get('target_amount'));
+  const saved = v.amount(formData.get('saved_amount'));
   if (!title) return;
 
   if (id) {
@@ -392,6 +405,7 @@ export async function saveGoal(formData: FormData) {
 // Feature 7: Emergency pause completed
 // ---------------------------------------------------------------------------
 export async function recordEmergencyPause() {
+  if (!allow('recordEmergencyPause')) return;
   await addXp(XP.EMERGENCY_PAUSE_COMPLETED);
   revalidatePath('/dashboard');
 }
@@ -401,14 +415,16 @@ export async function recordEmergencyPause() {
 // Logging an urge (rather than gambling) is the win; we reward the honesty.
 // ---------------------------------------------------------------------------
 export async function logUrge(formData: FormData) {
+  if (!allow('logUrge')) return;
   const supabase = createClient();
 
-  const intensity = Math.max(0, Math.min(10, Math.round(num(formData.get('intensity')))));
-  const triggerRaw = (formData.get('trigger') as string) || '';
-  const trigger = URGE_TRIGGER_VALUES.has(triggerRaw as UrgeTrigger)
-    ? (triggerRaw as UrgeTrigger)
-    : null;
-  const note = ((formData.get('note') as string) || '').trim().slice(0, 500) || null;
+  const intensity = v.clamp(
+    Math.round(v.toNumber(formData.get('intensity'))),
+    0,
+    10,
+  );
+  const trigger = v.oneOf(formData.get('trigger'), URGE_TRIGGER_VALUES);
+  const note = v.text(formData.get('note'), 500);
   // A slip records its own session; an urge log defaults to "rode it out".
   const resisted = formData.get('resisted') !== 'false';
 
@@ -432,6 +448,7 @@ export async function logUrge(formData: FormData) {
 // ---------------------------------------------------------------------------
 export async function recordRiskEvent(outcome: RiskOutcome) {
   if (outcome !== 'safe' && outcome !== 'paused' && outcome !== 'support') return;
+  if (!allow('recordRiskEvent')) return;
   const supabase = createClient();
   await supabase
     .from('risk_events')
@@ -441,12 +458,11 @@ export async function recordRiskEvent(outcome: RiskOutcome) {
 }
 
 export async function saveRiskSettings(formData: FormData) {
+  if (!allow('saveRiskSettings')) return;
   const supabase = createClient();
 
   const enabled = formData.get('risk_gate_enabled') === 'on';
-  const phone =
-    ((formData.get('support_phone') as string) || '').trim().slice(0, 40) ||
-    null;
+  const phone = v.text(formData.get('support_phone'), 40);
 
   let parsed: unknown = [];
   try {
@@ -473,10 +489,15 @@ export async function saveRiskSettings(formData: FormData) {
 // Settings
 // ---------------------------------------------------------------------------
 export async function updateSettings(formData: FormData) {
+  if (!allow('updateSettings')) return;
   const supabase = createClient();
-  const fullName = (formData.get('full_name') as string) || null;
-  const hourlyWage = num(formData.get('hourly_wage'), 25);
-  const dailyVault = num(formData.get('daily_vault_amount'), 5);
+  const fullName = v.text(formData.get('full_name'), 80);
+  const hourlyWage = v.clamp(v.toNumber(formData.get('hourly_wage'), 25), 0, 100_000);
+  const dailyVault = v.clamp(
+    v.toNumber(formData.get('daily_vault_amount'), 5),
+    0,
+    100_000,
+  );
   const consequenceMode = formData.get('consequence_mode') === 'on';
 
   await supabase

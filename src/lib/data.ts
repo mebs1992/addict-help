@@ -1,6 +1,6 @@
 import { createClient } from './supabase/server';
 import { PERSONAL_USER_ID } from './config';
-import { monthKey } from './calculations';
+import { monthKey, zonedDayKey } from './calculations';
 import type {
   AccountabilityEntry,
   Achievement,
@@ -82,7 +82,7 @@ export async function getStreak(): Promise<Streak | null> {
     .from('streaks')
     .insert({
       user_id: PERSONAL_USER_ID,
-      streak_start_date: new Date().toISOString().slice(0, 10),
+      streak_start_date: zonedDayKey(),
     })
     .select('*')
     .single();

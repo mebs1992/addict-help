@@ -173,6 +173,27 @@ export const RECOVERY_MESSAGES = [
   'You are not starting over. You are continuing, wiser.',
 ];
 
+// Future Self messaging (Feature 7.6) — supportive, identity-based lines that
+// rotate and change with the moment: a high-risk window, a recent slip, an
+// approaching milestone, or just an ordinary day. Recovery reuses
+// RECOVERY_MESSAGES above.
+export const FUTURE_SELF_MESSAGES = {
+  highRisk: [
+    'This is the exact moment you built this for. The you of tomorrow is watching — make them proud.',
+    'The feeling will pass. The regret of giving in won’t. Stay with your future self.',
+    'You’re one decision away from a story you’ll be proud to tell. Choose it.',
+  ],
+  milestone: [
+    'You’re almost at a milestone you set for yourself. That’s not luck — that’s you.',
+    'So close. The person you’re becoming doesn’t quit this near the line.',
+  ],
+  default: [
+    'Every clean day is you keeping a promise to your future self.',
+    'The life you’re saving for is built one ordinary, gamble-free day at a time.',
+    'You’re not giving something up — you’re buying back your future.',
+  ],
+};
+
 // ---------------------------------------------------------------------------
 // Composite behaviour model (Spec §8) — stability over streak-as-success.
 // ---------------------------------------------------------------------------
