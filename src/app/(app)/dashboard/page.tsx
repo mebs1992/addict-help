@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import { acknowledgeOverBudget } from '@/lib/actions';
+import { acknowledgeOverBudget, logCleanDay } from '@/lib/actions';
 import {
   getAccountabilityEntries,
   getCurrentBudget,
@@ -10,6 +10,8 @@ import {
   getStreak,
 } from '@/lib/data';
 import {
+  dayKey,
+  exposureRisk,
   guardrailsFor,
   money,
   monthKey,
@@ -33,6 +35,7 @@ export default async function DashboardPage() {
 
   const now = new Date();
   const thisMonth = monthKey(now);
+  const today = dayKey(now);
 
   const monthSpent = sum(
     sessions
@@ -40,6 +43,10 @@ export default async function DashboardPage() {
       .map((s) => Number(s.amount)),
   );
   const lifetime = sum(sessions.map((s) => Number(s.amount)));
+  const gambledToday = sessions.some(
+    (s) => dayKey(new Date(s.gambled_at)) === today,
+  );
+  const checkedInToday = profile?.last_clean_checkin === today;
 
   const g = guardrailsFor(
     profile?.monthly_income ?? 0,
@@ -66,6 +73,34 @@ export default async function DashboardPage() {
         : 'bg-brand-500/20 text-brand-400';
   const needsAck =
     zone === 'danger' && !noRoom && budget && !budget.acknowledged_over;
+
+  const exposure = exposureRisk(
+    profile?.spendings_balance ?? 0,
+    profile?.savings_balance ?? 0,
+    profile?.offset_balance ?? 0,
+    g.disposable,
+  );
+  const hasAccounts = exposure.accessible > 0 || exposure.protectedFunds > 0;
+  const expTone: 'danger' | 'warn' | 'brand' =
+    exposure.level === 'high'
+      ? 'danger'
+      : exposure.level === 'moderate'
+        ? 'warn'
+        : 'brand';
+  const expPill =
+    exposure.level === 'high'
+      ? 'bg-danger-500/20 text-danger-400'
+      : exposure.level === 'moderate'
+        ? 'bg-warn-500/20 text-warn-400'
+        : 'bg-brand-500/20 text-brand-400';
+  const expBarPct =
+    exposure.level === 'high' ? 100 : exposure.level === 'moderate' ? 60 : 25;
+  const expMessage =
+    exposure.level === 'high'
+      ? 'A lot of cash is within easy reach. Moving spare savings into your offset makes it far harder to touch in a weak moment — and cuts mortgage interest.'
+      : exposure.level === 'moderate'
+        ? 'Some cash is within easy reach. Parking spare savings in your offset keeps it out of one-tap range.'
+        : 'Little cash sits within easy reach — your exposure is low. Keep it that way.';
 
   const opp = opportunityBreakdown(lifetime);
   const reasons = accountability
@@ -178,6 +213,44 @@ export default async function DashboardPage() {
         </div>
       )}
 
+      {/* Exposure risk — how much cash is within easy reach to gamble */}
+      {hasAccounts && (
+        <div className="card">
+          <div className="flex items-center justify-between">
+            <p className="muted">Exposure risk</p>
+            <span className={`pill ${expPill} capitalize`}>
+              {exposure.level}
+            </span>
+          </div>
+          <div className="mt-2 flex items-end justify-between">
+            <div>
+              <p className="muted">Within easy reach</p>
+              <p className="text-2xl font-bold text-slate-100">
+                {money(exposure.accessible)}
+              </p>
+            </div>
+            {exposure.protectedFunds > 0 && (
+              <div className="text-right">
+                <p className="muted">Protected (offset)</p>
+                <p className="font-semibold text-brand-400">
+                  {money(exposure.protectedFunds)}
+                </p>
+              </div>
+            )}
+          </div>
+          <div className="mt-3">
+            <ProgressBar pct={expBarPct} tone={expTone} />
+          </div>
+          <p className="muted mt-2">{expMessage}</p>
+          <Link
+            href="/budget"
+            className="muted mt-3 inline-block text-brand-400"
+          >
+            Update balances →
+          </Link>
+        </div>
+      )}
+
       {/* Future Self (Feature 6) */}
       {(profile?.future_self_image_url || goal?.image_url || profile?.future_self_caption) && (
         <Link href="/future-self" className="block overflow-hidden rounded-2xl border border-white/10">
@@ -265,6 +338,20 @@ export default async function DashboardPage() {
 
       {/* Primary CTA + emergency (Features 2, 7) */}
       <div className="space-y-3">
+        {/* Daily clean-day affirmation */}
+        {!gambledToday &&
+          (checkedInToday ? (
+            <div className="rounded-2xl border border-brand-500/40 bg-brand-500/10 p-4 text-center text-sm font-medium text-brand-400">
+              ✅ You logged a clean day today. Proud of you — that&apos;s how
+              streaks are built.
+            </div>
+          ) : (
+            <form action={logCleanDay}>
+              <button className="btn w-full bg-brand-600 py-4 text-base text-white hover:bg-brand-500">
+                ✅ I didn&apos;t gamble today
+              </button>
+            </form>
+          ))}
         <Link href="/check-in" className="btn-primary w-full py-4 text-base">
           ➕ I Gambled Today
         </Link>

@@ -8,6 +8,9 @@ export default async function BudgetPage() {
   const profile = await getProfile();
   const monthlyIncome = profile?.monthly_income ?? 0;
   const monthlyExpenses = profile?.monthly_expenses ?? 0;
+  const spendings = profile?.spendings_balance ?? 0;
+  const savings = profile?.savings_balance ?? 0;
+  const offset = profile?.offset_balance ?? 0;
   const g = guardrailsFor(monthlyIncome, monthlyExpenses);
 
   return (
@@ -82,6 +85,68 @@ export default async function BudgetPage() {
           defaultIncome={monthlyIncome}
           defaultExpenses={monthlyExpenses}
         />
+
+        <div className="space-y-4 border-t border-white/10 pt-4">
+          <div>
+            <p className="label">Your accounts (optional)</p>
+            <p className="muted">
+              Balances help gauge your exposure — how much cash is within easy
+              reach in a weak moment. Spendings + savings count as accessible;
+              your offset is treated as protected.
+            </p>
+          </div>
+
+          <div>
+            <label className="label" htmlFor="spendings_balance">
+              Spendings / everyday account
+            </label>
+            <input
+              id="spendings_balance"
+              name="spendings_balance"
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="50"
+              defaultValue={spendings || ''}
+              placeholder="800"
+              className="input"
+            />
+          </div>
+
+          <div>
+            <label className="label" htmlFor="savings_balance">
+              Savings account
+            </label>
+            <input
+              id="savings_balance"
+              name="savings_balance"
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="50"
+              defaultValue={savings || ''}
+              placeholder="5000"
+              className="input"
+            />
+          </div>
+
+          <div>
+            <label className="label" htmlFor="offset_balance">
+              Mortgage offset account
+            </label>
+            <input
+              id="offset_balance"
+              name="offset_balance"
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="50"
+              defaultValue={offset || ''}
+              placeholder="20000"
+              className="input"
+            />
+          </div>
+        </div>
 
         <button className="btn-primary w-full py-3.5">Save my guardrails</button>
       </form>

@@ -33,6 +33,10 @@ export interface Profile {
   monthly_income: number | null;
   annual_income: number | null;
   monthly_expenses: number | null;
+  spendings_balance: number | null;
+  savings_balance: number | null;
+  offset_balance: number | null;
+  last_clean_checkin: string | null;
   consequence_mode: boolean;
   daily_vault_amount: number;
   future_self_image_url: string | null;
