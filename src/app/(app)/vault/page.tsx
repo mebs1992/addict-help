@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { getProfile, getStreak } from '@/lib/data';
-import { money, projectedYearlySavings } from '@/lib/calculations';
+import { money, projectedYearlySavings, recoveryStatus } from '@/lib/calculations';
+import { RECOVERY_REDUCED_VAULT_DAYS } from '@/lib/constants';
 import { ProgressBar } from '@/components/ui';
 
 export default async function VaultPage() {
@@ -10,6 +11,7 @@ export default async function VaultPage() {
   const current = streak?.current_streak ?? 0;
   const projectedYear = projectedYearlySavings(daily);
   const yearPct = projectedYear > 0 ? (balance / projectedYear) * 100 : 0;
+  const recovery = recoveryStatus(streak?.last_gamble_date ?? null);
 
   return (
     <div className="space-y-5">
@@ -26,10 +28,19 @@ export default async function VaultPage() {
         <p className="my-2 text-5xl font-bold text-brand-400">
           {money(balance)}
         </p>
-        <p className="muted">
-          from {Math.max(0, Math.round(balance / (daily || 1)))} gamble-free days
-        </p>
+        <p className="muted">from {current} gamble-free days</p>
       </div>
+
+      {recovery.inRecovery && (
+        <div className="rounded-2xl border border-brand-500/40 bg-brand-500/10 p-4">
+          <p className="font-semibold text-brand-300">🌱 Recovery rate</p>
+          <p className="muted mt-1">
+            You&apos;re in recovery, so the vault fills at a gentler rate for the
+            first {RECOVERY_REDUCED_VAULT_DAYS} days — it never stops growing.
+            Full rate resumes after that.
+          </p>
+        </div>
+      )}
 
       <div className="card">
         <div className="flex items-center justify-between">

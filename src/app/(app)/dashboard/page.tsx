@@ -6,24 +6,30 @@ import {
   getCurrentBudget,
   getPrimaryGoal,
   getProfile,
+  getRiskEvents,
   getSessions,
   getStreak,
+  getUrgeLogs,
 } from '@/lib/data';
 import {
+  behaviourModel,
   dayKey,
   exposureRisk,
   guardrailsFor,
   money,
   monthKey,
   opportunityBreakdown,
+  recoveryStatus,
+  rotatingMessage,
   spendZone,
   sum,
 } from '@/lib/calculations';
+import { RECOVERY_MESSAGES, RECOVERY_WINDOW_DAYS } from '@/lib/constants';
 import { Banner, LinkCard, ProgressBar, StatCard } from '@/components/ui';
 import { EmergencyPause } from '@/components/EmergencyPause';
 
 export default async function DashboardPage() {
-  const [profile, budget, sessions, streak, goal, accountability] =
+  const [profile, budget, sessions, streak, goal, accountability, urges, riskEvents] =
     await Promise.all([
       getProfile(),
       getCurrentBudget(),
@@ -31,6 +37,8 @@ export default async function DashboardPage() {
       getStreak(),
       getPrimaryGoal(),
       getAccountabilityEntries(),
+      getUrgeLogs(200),
+      getRiskEvents(200),
     ]);
 
   const now = new Date();
@@ -110,12 +118,52 @@ export default async function DashboardPage() {
 
   const firstName = profile?.full_name?.split(' ')[0] || 'there';
 
+  // Recovery Mode (7.2) + composite behaviour model (§8).
+  const recovery = recoveryStatus(streak?.last_gamble_date ?? null, now);
+  const recoveryMsg = rotatingMessage(RECOVERY_MESSAGES, now);
+  const model = behaviourModel({
+    lastGambleDate: streak?.last_gamble_date ?? null,
+    sessionDates: sessions.map((s) => s.gambled_at),
+    urgeDates: urges.filter((u) => u.resisted).map((u) => u.created_at),
+    riskEventCount: riskEvents.length,
+  });
+  const stabilityToneText =
+    model.stabilityIndex >= 70
+      ? 'text-brand-400'
+      : model.stabilityIndex >= 40
+        ? 'text-warn-400'
+        : 'text-danger-400';
+
   return (
     <div className="space-y-5">
       <div>
         <p className="muted">Welcome back,</p>
         <h1 className="text-2xl font-bold">{firstName} 👋</h1>
       </div>
+
+      {/* Recovery Mode (7.2): reframe a recent slip as a window to recover in,
+          not a streak to mourn. */}
+      {recovery.inRecovery && (
+        <div className="rounded-2xl border border-brand-500/40 bg-brand-500/10 p-5">
+          <div className="flex items-center justify-between gap-3">
+            <p className="font-bold text-brand-300">
+              🌱 Recovery mode · day {recovery.day} of {RECOVERY_WINDOW_DAYS}
+            </p>
+            <span className="pill bg-brand-500/20 text-brand-400 shrink-0">
+              {recovery.daysLeft}d left
+            </span>
+          </div>
+          <p className="mt-2 text-sm text-slate-200">{recoveryMsg}</p>
+          <div className="mt-3 flex gap-2">
+            <Link href="/urge" className="btn-ghost flex-1 py-2 text-sm">
+              Log an urge
+            </Link>
+            <Link href="/accountability" className="btn-ghost flex-1 py-2 text-sm">
+              Your reasons
+            </Link>
+          </div>
+        </div>
+      )}
 
       {/* Not set up yet -> prompt the income + expenses setup */}
       {!hasGuardrails && (
@@ -374,9 +422,43 @@ export default async function DashboardPage() {
         />
       </div>
 
+      {/* Behavioural stability (Spec §8) — patterns over streak-or-bust */}
+      {model.events > 0 && (
+        <Link
+          href="/insights"
+          className="card block transition hover:border-brand-500/40 hover:bg-ink-800/70"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="muted">Behavioural stability</p>
+              <p className={`text-3xl font-bold ${stabilityToneText}`}>
+                {model.stabilityIndex}
+                <span className="text-base text-slate-500">/100</span>
+              </p>
+              <p className="muted">{model.stabilityLabel}</p>
+            </div>
+            <span className="text-3xl">🧠</span>
+          </div>
+          <div className="mt-3">
+            <ProgressBar
+              pct={model.stabilityIndex}
+              tone={
+                model.stabilityIndex >= 70
+                  ? 'brand'
+                  : model.stabilityIndex >= 40
+                    ? 'warn'
+                    : 'danger'
+              }
+            />
+          </div>
+          <p className="muted mt-2 text-brand-400">See your patterns →</p>
+        </Link>
+      )}
+
       {/* Navigation to deeper features */}
       <div className="space-y-2">
         <LinkCard href="/urge" emoji="🌊" title="Urge Tracker" desc="Name a craving, watch it pass" />
+        <LinkCard href="/insights" emoji="🧠" title="Insights" desc="Your risk times, triggers and patterns" />
         <LinkCard href="/reality-check" emoji="🪞" title="Reality Check" desc="The full picture, impossible to ignore" />
         <LinkCard href="/vault" emoji="🏦" title="Reward Vault" desc="What your clean days are worth" />
         <LinkCard href="/streak" emoji="🔥" title="Streak & Achievements" desc="Your milestones" />

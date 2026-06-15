@@ -1,6 +1,6 @@
 import { getAchievements, getStreak } from '@/lib/data';
-import { nextAchievement } from '@/lib/calculations';
-import { ACHIEVEMENTS } from '@/lib/constants';
+import { nextAchievement, recoveryStatus, rotatingMessage } from '@/lib/calculations';
+import { ACHIEVEMENTS, RECOVERY_MESSAGES, RECOVERY_WINDOW_DAYS } from '@/lib/constants';
 import { ProgressBar } from '@/components/ui';
 
 export default async function StreakPage() {
@@ -14,6 +14,7 @@ export default async function StreakPage() {
   const unlocked = new Set(achievements.map((a) => a.code));
   const next = nextAchievement(current);
   const nextPct = next ? Math.min(100, (current / next.days) * 100) : 100;
+  const recovery = recoveryStatus(streak?.last_gamble_date ?? null);
 
   return (
     <div className="space-y-5">
@@ -21,6 +22,18 @@ export default async function StreakPage() {
         <h1 className="text-2xl font-bold">Your streak 🔥</h1>
         <p className="muted mt-1">Every clean day is a brick in the wall.</p>
       </div>
+
+      {recovery.inRecovery && (
+        <div className="rounded-2xl border border-brand-500/40 bg-brand-500/10 p-4">
+          <p className="font-semibold text-brand-300">
+            🌱 Recovery mode · day {recovery.day} of {RECOVERY_WINDOW_DAYS}
+          </p>
+          <p className="muted mt-1">
+            {rotatingMessage(RECOVERY_MESSAGES)} A reset number isn&apos;t a
+            reset on you.
+          </p>
+        </div>
+      )}
 
       <div className="card flex items-center justify-around text-center">
         <div>

@@ -9,7 +9,7 @@ import {
   percentOverBudget,
   sum,
 } from '@/lib/calculations';
-import { INVEST_YEARS } from '@/lib/constants';
+import { INVEST_YEARS, RECOVERY_WINDOW_DAYS } from '@/lib/constants';
 import { Banner } from '@/components/ui';
 
 export default async function CheckInResultPage({
@@ -46,6 +46,17 @@ export default async function CheckInResultPage({
         <p className="muted mt-1">
           You stayed honest with yourself. That&apos;s the hard part — and
           you&apos;ve earned XP for it.
+        </p>
+      </div>
+
+      {/* Recovery Mode (7.2): a slip starts a window, not a punishment. */}
+      <div className="rounded-2xl border border-brand-500/40 bg-brand-500/10 p-4">
+        <p className="font-semibold text-brand-300">
+          🌱 You&apos;re in recovery mode for the next {RECOVERY_WINDOW_DAYS} days
+        </p>
+        <p className="muted mt-1">
+          This week is about getting back on track, not starting from zero. Your
+          vault keeps growing, gently, while you find your feet.
         </p>
       </div>
 
