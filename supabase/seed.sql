@@ -1,7 +1,7 @@
 -- ============================================================================
 -- Optional demo data for "The Cost of One Spin" (personal single-user mode)
 -- ----------------------------------------------------------------------------
--- Run AFTER migrations 0001–0005. It fills the single personal profile with a
+-- Run AFTER migrations 0001–0006. It fills the single personal profile with a
 -- realistic month of activity so you can see the app populated. Re-running it
 -- clears prior demo gambling sessions first, so it's safe to repeat.
 --
@@ -19,6 +19,9 @@ begin
     monthly_income     = 6500,
     annual_income      = 78000,
     monthly_expenses   = 4200,
+    spendings_balance  = 900,
+    savings_balance    = 6000,
+    offset_balance     = 18000,
     consequence_mode   = true,
     daily_vault_amount = 5,
     future_self_caption = 'My kids'' first overseas trip — this is what I''m playing for.',

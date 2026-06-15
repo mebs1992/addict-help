@@ -8,6 +8,16 @@ import type { ConsequenceCategory, MoodValue } from './types';
 export const GUARDRAIL_SAFE_PCT = 1; // green ceiling — a low-risk limit
 export const GUARDRAIL_CEILING_PCT = 3; // red ceiling — clear harm above this
 
+// Exposure risk: accessible cash (spendings + savings) measured in months of
+// disposable income. The more reachable cash, the more a single bad night can
+// destroy — so a big accessible balance relative to spare income reads as
+// higher exposure.
+export const EXPOSURE_MODERATE_MONTHS = 2;
+export const EXPOSURE_HIGH_MONTHS = 6;
+// Absolute fallbacks (in dollars) when disposable income is unknown / zero.
+export const EXPOSURE_MODERATE_CASH = 2000;
+export const EXPOSURE_HIGH_CASH = 10000;
+
 // Fallback hourly wage used when a user hasn't set income details yet.
 export const DEFAULT_HOURLY_WAGE = 25;
 

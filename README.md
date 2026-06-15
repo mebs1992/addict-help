@@ -76,7 +76,8 @@ the-cost-of-one-spin/
 │   │   ├── 0002_rls_policies.sql     # Row Level Security
 │   │   ├── 0003_storage.sql          # future-self image bucket
 │   │   ├── 0004_personal_single_user.sql  # Detach auth, seed the one profile
-│   │   └── 0005_monthly_income.sql   # Monthly-income column for guardrails
+│   │   ├── 0005_monthly_income.sql   # Monthly-income column for guardrails
+│   │   └── 0006_accounts_and_clean_checkin.sql  # Balances + daily check-in
 │   └── seed.sql                      # Optional rich demo data
 ├── docs/                             # WIREFRAMES.md, ARCHITECTURE.md
 ├── .env.example
@@ -90,13 +91,14 @@ the-cost-of-one-spin/
 ### 1. Create your Supabase project
 1. At [supabase.com](https://supabase.com) → **New project**. Choose a name,
    a strong database password, and a nearby region. Wait ~2 min.
-2. Open **SQL Editor → New query** and run the five migrations **in order**
+2. Open **SQL Editor → New query** and run the six migrations **in order**
    (paste each file, click Run):
    - `supabase/migrations/0001_initial_schema.sql`
    - `supabase/migrations/0002_rls_policies.sql`
    - `supabase/migrations/0003_storage.sql`
    - `supabase/migrations/0004_personal_single_user.sql`
    - `supabase/migrations/0005_monthly_income.sql`
+   - `supabase/migrations/0006_accounts_and_clean_checkin.sql`
 3. Go to **Project Settings → API** and copy two values:
    - **Project URL** → `NEXT_PUBLIC_SUPABASE_URL`
    - **`service_role` secret** (under *Project API keys*, click *Reveal*) →

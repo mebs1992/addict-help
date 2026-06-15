@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from './supabase/server';
 import { PERSONAL_USER_ID } from './config';
 import {
+  dayKey,
   earnedAchievementCodes,
   guardrailsFor,
   hoursWorked,
@@ -45,6 +46,9 @@ export async function saveBudget(formData: FormData) {
 
   const monthlyIncome = num(formData.get('monthly_income'));
   const monthlyExpenses = num(formData.get('monthly_expenses'));
+  const spendings = num(formData.get('spendings_balance'));
+  const savings = num(formData.get('savings_balance'));
+  const offset = num(formData.get('offset_balance'));
   const g = guardrailsFor(monthlyIncome, monthlyExpenses);
 
   await supabase
@@ -52,6 +56,9 @@ export async function saveBudget(formData: FormData) {
     .update({
       monthly_income: monthlyIncome,
       monthly_expenses: monthlyExpenses,
+      spendings_balance: spendings,
+      savings_balance: savings,
+      offset_balance: offset,
     })
     .eq('id', USER_ID);
 
@@ -146,6 +153,31 @@ export async function logGamblingSession(formData: FormData) {
   await addXp(XP.LOG_SESSION);
   revalidatePath('/', 'layout');
   redirect('/check-in/result?amount=' + encodeURIComponent(String(amount)));
+}
+
+// ---------------------------------------------------------------------------
+// Daily affirmation: "I didn't gamble today". Purely motivational — the streak
+// stays date-based — but it rewards showing up. Awards XP at most once per day.
+// ---------------------------------------------------------------------------
+export async function logCleanDay() {
+  const supabase = createClient();
+  const today = dayKey();
+
+  const { data } = await supabase
+    .from('profiles')
+    .select('last_clean_checkin')
+    .eq('id', USER_ID)
+    .maybeSingle();
+
+  // Already affirmed today — nothing to do (keeps XP idempotent per day).
+  if (data?.last_clean_checkin === today) return;
+
+  await supabase
+    .from('profiles')
+    .update({ last_clean_checkin: today })
+    .eq('id', USER_ID);
+  await addXp(XP.GAMBLE_FREE_DAY);
+  revalidatePath('/dashboard');
 }
 
 // ---------------------------------------------------------------------------

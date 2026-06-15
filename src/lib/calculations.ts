@@ -2,6 +2,10 @@
 
 import {
   ACHIEVEMENTS,
+  EXPOSURE_HIGH_CASH,
+  EXPOSURE_HIGH_MONTHS,
+  EXPOSURE_MODERATE_CASH,
+  EXPOSURE_MODERATE_MONTHS,
   GUARDRAIL_CEILING_PCT,
   GUARDRAIL_SAFE_PCT,
   INVEST_ANNUAL_RETURN,
@@ -54,6 +58,57 @@ export function spendZone(spent: number, g: Guardrails): SpendZone {
   if (spent > g.ceiling) return 'danger';
   if (spent > g.safeLimit) return 'caution';
   return 'safe';
+}
+
+export type ExposureLevel = 'low' | 'moderate' | 'high';
+
+export interface ExposureAssessment {
+  /** Cash within easy reach to gamble: spendings + savings. */
+  accessible: number;
+  /** Funds harder to touch (mortgage offset). */
+  protectedFunds: number;
+  /** Accessible cash expressed as months of disposable income (null if N/A). */
+  months: number | null;
+  level: ExposureLevel;
+}
+
+/**
+ * Exposure risk = how much cash is within easy reach to gamble. Spendings and
+ * savings are accessible; the mortgage offset is treated as protected. The more
+ * accessible cash relative to spare (disposable) income, the higher the risk.
+ */
+export function exposureRisk(
+  spendings: number | null,
+  savings: number | null,
+  offset: number | null,
+  monthlyDisposable: number,
+): ExposureAssessment {
+  const accessible = Math.max(0, spendings ?? 0) + Math.max(0, savings ?? 0);
+  const protectedFunds = Math.max(0, offset ?? 0);
+
+  let level: ExposureLevel = 'low';
+  let months: number | null = null;
+
+  if (accessible <= 0) {
+    level = 'low';
+  } else if (monthlyDisposable > 0) {
+    months = accessible / monthlyDisposable;
+    level =
+      months >= EXPOSURE_HIGH_MONTHS
+        ? 'high'
+        : months >= EXPOSURE_MODERATE_MONTHS
+          ? 'moderate'
+          : 'low';
+  } else {
+    level =
+      accessible >= EXPOSURE_HIGH_CASH
+        ? 'high'
+        : accessible >= EXPOSURE_MODERATE_CASH
+          ? 'moderate'
+          : 'low';
+  }
+
+  return { accessible, protectedFunds, months, level };
 }
 
 /** Hours of work a dollar amount represents at a given hourly wage. */
@@ -199,4 +254,12 @@ export function monthKey(date: Date = new Date()): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
   return `${y}-${m}-01`;
+}
+
+/** Calendar day (YYYY-MM-DD) for a given date, in local time. */
+export function dayKey(date: Date = new Date()): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
