@@ -7,8 +7,10 @@ import type {
   GamblingSession,
   MonthlyBudget,
   Profile,
+  RiskEvent,
   SavingsGoal,
   Streak,
+  UrgeLog,
 } from './types';
 
 /** Fetch the personal profile, creating a default row if missing. */
@@ -125,6 +127,30 @@ export async function getAccountabilityEntries(): Promise<
   return (data as AccountabilityEntry[]) ?? [];
 }
 
+export async function getUrgeLogs(limit?: number): Promise<UrgeLog[]> {
+  const supabase = createClient();
+  let query = supabase
+    .from('urge_logs')
+    .select('*')
+    .eq('user_id', PERSONAL_USER_ID)
+    .order('created_at', { ascending: false });
+  if (limit) query = query.limit(limit);
+  const { data } = await query;
+  return (data as UrgeLog[]) ?? [];
+}
+
+export async function getRiskEvents(limit?: number): Promise<RiskEvent[]> {
+  const supabase = createClient();
+  let query = supabase
+    .from('risk_events')
+    .select('*')
+    .eq('user_id', PERSONAL_USER_ID)
+    .order('created_at', { ascending: false });
+  if (limit) query = query.limit(limit);
+  const { data } = await query;
+  return (data as RiskEvent[]) ?? [];
+}
+
 /** Total amount gambled in a given month (YYYY-MM-01). */
 export function sumSessionsForMonth(
   sessions: GamblingSession[],
@@ -133,4 +159,34 @@ export function sumSessionsForMonth(
   return sessions
     .filter((s) => monthKey(new Date(s.gambled_at)) === month)
     .reduce((acc, s) => acc + Number(s.amount), 0);
+}
+
+/** Everything the Emergency Pause / risk gate needs to ground the moment. */
+export interface EmergencyPauseContext {
+  monthlyLosses: number;
+  currentStreak: number;
+  goalTitle: string | null;
+  goalSaved: number;
+  goalTarget: number;
+  reasons: string[];
+}
+
+export async function getEmergencyPauseContext(): Promise<EmergencyPauseContext> {
+  const [sessions, streak, goal, accountability] = await Promise.all([
+    getSessions(),
+    getStreak(),
+    getPrimaryGoal(),
+    getAccountabilityEntries(),
+  ]);
+  return {
+    monthlyLosses: sumSessionsForMonth(sessions, monthKey()),
+    currentStreak: streak?.current_streak ?? 0,
+    goalTitle: goal?.title ?? null,
+    goalSaved: goal ? Number(goal.saved_amount) : 0,
+    goalTarget: goal ? Number(goal.target_amount) : 0,
+    reasons: accountability
+      .filter((e) => e.entry_type === 'reason')
+      .map((e) => e.content)
+      .slice(0, 3),
+  };
 }

@@ -25,6 +25,9 @@ begin
     consequence_mode   = true,
     daily_vault_amount = 5,
     future_self_caption = 'My kids'' first overseas trip — this is what I''m playing for.',
+    risk_gate_enabled  = false,
+    support_phone      = null,
+    high_risk_windows  = '[{"id":"seed-fri-sat","label":"Friday & Saturday nights","days":[5,6],"start":"18:00","end":"23:00"}]'::jsonb,
     xp                 = 310
   where id = uid;
 
@@ -59,6 +62,15 @@ begin
   values
     (uid, 'Family trip to Japan', 8000, 1850, true),
     (uid, 'Emergency fund', 5000, 900, false);
+
+  -- Urge logs (cravings ridden out) -----------------------------------------
+  delete from public.urge_logs where user_id = uid;
+  insert into public.urge_logs (user_id, intensity, trigger, resisted, note, created_at)
+  values
+    (uid, 7, 'payday',  true, 'Pay landed and the itch came straight back.', now() - interval '9 days'),
+    (uid, 4, 'boredom', true, 'Quiet night, nothing on.',                    now() - interval '6 days'),
+    (uid, 8, 'stress',  true, 'Bill arrived, wanted to escape.',             now() - interval '2 days'),
+    (uid, 5, 'habit',   true, null,                                          now() - interval '20 hours');
 
   -- Accountability wall -----------------------------------------------------
   delete from public.accountability_entries where user_id = uid;

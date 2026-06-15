@@ -1,4 +1,9 @@
-import type { ConsequenceCategory, MoodValue } from './types';
+import type { ConsequenceCategory, MoodValue, UrgeTrigger } from './types';
+
+// The single timezone all "what day / what time is it" decisions resolve to.
+// Storage stays in UTC; day boundaries and the risk-gate clock derive from this
+// so a late-night session never lands on the wrong calendar day.
+export const APP_TIMEZONE = 'Australia/Sydney';
 
 // Tiered monthly spending guardrails, as a % of disposable income (monthly
 // take-home income minus essential expenses). Spend at or below the safe limit
@@ -79,6 +84,31 @@ export const CONSEQUENCE_CATEGORIES: {
   { value: 'health', label: 'Health', emoji: '❤️‍🩹' },
 ];
 
+// Urge triggers (Feature 7.4). What was driving the craving — the dataset the
+// behavioural-insight engine will eventually learn from.
+export const URGE_TRIGGERS: {
+  value: UrgeTrigger;
+  label: string;
+  emoji: string;
+}[] = [
+  { value: 'stress', label: 'Stress', emoji: '😣' },
+  { value: 'boredom', label: 'Boredom', emoji: '😐' },
+  { value: 'social', label: 'Social', emoji: '👥' },
+  { value: 'payday', label: 'Payday', emoji: '💸' },
+  { value: 'habit', label: 'Habit loop', emoji: '🔁' },
+  { value: 'other', label: 'Something else', emoji: '❓' },
+];
+
+// Pre-commitment risk gate (Feature 7.1).
+// Default crisis line shown on the gate's "Call support" option (AU, 24/7).
+export const DEFAULT_SUPPORT_PHONE = '1800858858';
+export const DEFAULT_SUPPORT_LABEL = 'Gambling Help · 1800 858 858';
+// "I'm safe" stays disabled for this long — a deliberate delay at the decision
+// point so the impulse has to wait the friction out.
+export const RISK_GATE_SAFE_DELAY_SECONDS = 20;
+// After clearing the gate, it stays dismissed this long before it can re-arm.
+export const RISK_GATE_REPRIEVE_MINUTES = 45;
+
 // Streak achievements (Feature 5).
 export interface AchievementDef {
   code: string;
@@ -100,6 +130,8 @@ export const ACHIEVEMENTS: AchievementDef[] = [
 export const XP = {
   LOG_SESSION: 15, // logging honestly, even a loss
   GAMBLE_FREE_DAY: 10,
+  LOG_URGE: 15, // naming an urge instead of acting on it (Feature 7.4)
+  RISK_GATE_SAFE: 15, // cleared the pre-commitment gate safely (Feature 7.1)
   WITHIN_BUDGET_MONTH: 100,
   REVIEW_REPORT: 25,
   ACCOUNTABILITY_ENTRY: 20,

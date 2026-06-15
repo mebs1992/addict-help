@@ -1,4 +1,4 @@
-import { getProfile } from '@/lib/data';
+import { getEmergencyPauseContext, getProfile } from '@/lib/data';
 import { CheckInForm } from './CheckInForm';
 
 function localDateTimeValue(d = new Date()): string {
@@ -10,19 +10,24 @@ function localDateTimeValue(d = new Date()): string {
 }
 
 export default async function CheckInPage() {
-  const profile = await getProfile();
+  const [profile, pauseContext] = await Promise.all([
+    getProfile(),
+    getEmergencyPauseContext(),
+  ]);
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-bold">I gambled today</h1>
+        <h1 className="text-2xl font-bold">Before you spin</h1>
         <p className="muted mt-1">
-          Recording this takes courage. It&apos;s how you stay aware — and one
-          session never erases your progress.
+          See the real cost first. Nothing is logged until you choose to proceed
+          — and one session never erases your progress.
         </p>
       </div>
       <CheckInForm
         consequenceMode={profile?.consequence_mode ?? false}
         defaultDateTime={localDateTimeValue()}
+        hourlyWage={profile?.hourly_wage ?? 25}
+        {...pauseContext}
       />
     </div>
   );

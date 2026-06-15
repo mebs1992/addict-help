@@ -46,8 +46,12 @@ For pure-logic changes, sanity-check formulas with a quick `node -e` replica.
 - **Exposure risk:** `accessible = spendings + savings`, `protected = offset`. Level by `accessible / disposable`: ≥6 months high, ≥2 moderate, else low (fallback when disposable 0: ≥$10k / ≥$2k). `exposureRisk()`.
 - **Streak/vault (date-based, recomputed in `syncProgress` every load):** `current_streak` = days since `last_gamble_date` (or since `streak_start_date`). `vault_balance = gambleFreeDays × daily_vault_amount` (default $5). **Not logging = assumed clean day.**
 - **Daily affirmation:** `logCleanDay()` ("I didn't gamble today") awards XP once/day via `profiles.last_clean_checkin`; does NOT affect the streak.
-- **XP awarded:** log session 15, clean day 10, accountability entry 20, emergency pause 50. **Levels:** 0 / 250 / 750 / 2000.
+- **Urge tracking (Phase 1, Feature 7.4):** `logUrge()` records an `urge_logs` row (intensity 0–10 + trigger) — naming a craving instead of acting on it. Page at `/urge`, surfaced on the dashboard; `summariseUrges()` is the pure roll-up. Awards XP for honesty.
+- **Pre-commitment risk gate (Phase 1, Feature 7.1):** `RiskGate` (client, mounted in `(app)/layout.tsx`) takes over the whole screen during user-defined `profiles.high_risk_windows` while `risk_gate_enabled`. Only three exits: a delayed "I'm safe", a 10-min pause (reuses `EmergencyPause`), or "Call support". Window membership is evaluated client-side against the device clock via `activeRiskWindow()`; `recordRiskEvent()` logs the outcome to `risk_events`. Configured on Settings. Layout fetches pause context (`getEmergencyPauseContext()`) only when the gate is armed.
+- **Pre-confirmation spend simulation (Phase 1, Feature 7.3):** `CheckInForm` is a two-step client flow — inputs, then a cost preview (hours worked, invested value, opportunity items) shown *before* anything is logged, with Proceed / Pause 10 min / Log urge instead. `EmergencyPause` now supports a controlled `open`/`onOpenChange`/`hideTrigger` so the gate and check-in can drive it.
+- **XP awarded:** log session 15, clean day 10, urge log 15, risk-gate "safe" 15, accountability entry 20, emergency pause 50. **Levels:** 0 / 250 / 750 / 2000.
 - **Achievements:** streak ≥ {3,7,30,90,180,365} days. **Emergency pause:** 10 min. **Invested projection:** 7%/yr, 10 yrs, monthly compounding.
+- **Timezone:** Phase 1 logic resolves "what day/time is it" through `APP_TIMEZONE` (Australia/Sydney) via `zonedParts()`/`zonedDayKey()`. Legacy `dayKey`/`monthKey` remain local-time (unchanged) — don't mix the two in one comparison.
 
 ## Database workflow
 Migrations are applied **manually** in the Supabase SQL Editor, in order (see README). When adding columns: create a new `000N_*.sql` (use `add column if not exists`), update `types.ts`, the relevant action/query, `seed.sql`, and the README migration list. The app self-heals missing `profiles`/`streaks` rows but **not** missing columns.
@@ -65,6 +69,7 @@ Migrations are applied **manually** in the Supabase SQL Editor, in order (see RE
 - `XP.WITHIN_BUDGET_MONTH` and `XP.REVIEW_REPORT` are defined but **never awarded**.
 - Legacy `profiles.annual_income` column is unused.
 - No tests, no auth/rate-limiting (single-user, service-role).
+- **Phase 1 of the behavioural spec only** is built (risk gate 7.1, spend simulation 7.3, urge tracking 7.4). Still TODO from Part B: Recovery Mode (7.2), the behavioural insight engine (7.5, `urge_logs`/`risk_events` are the data source), future-self rotating messaging (7.6), and the composite behaviour model (§8). The clean-day button was **kept** (not replaced) alongside urge tracking; the global timezone migration is partial (new code is Sydney-aware, legacy `dayKey`/`monthKey` are not).
 
 ## Conventions
 - Match surrounding style: 2-space indent, single quotes, functional components, server-first.

@@ -352,6 +352,15 @@ export default async function DashboardPage() {
               </button>
             </form>
           ))}
+        {/* Urge tracking — interrupt the craving before it becomes a spend */}
+        {!gambledToday && (
+          <Link
+            href="/urge"
+            className="btn w-full border border-brand-500/40 bg-brand-500/10 py-4 text-base text-brand-300 hover:bg-brand-500/20"
+          >
+            🌊 I&apos;m feeling an urge — log it
+          </Link>
+        )}
         <Link href="/check-in" className="btn-primary w-full py-4 text-base">
           ➕ I Gambled Today
         </Link>
@@ -367,6 +376,7 @@ export default async function DashboardPage() {
 
       {/* Navigation to deeper features */}
       <div className="space-y-2">
+        <LinkCard href="/urge" emoji="🌊" title="Urge Tracker" desc="Name a craving, watch it pass" />
         <LinkCard href="/reality-check" emoji="🪞" title="Reality Check" desc="The full picture, impossible to ignore" />
         <LinkCard href="/vault" emoji="🏦" title="Reward Vault" desc="What your clean days are worth" />
         <LinkCard href="/streak" emoji="🔥" title="Streak & Achievements" desc="Your milestones" />

@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { BottomNav } from '@/components/BottomNav';
-import { getProfile } from '@/lib/data';
+import { RiskGate } from '@/components/RiskGate';
+import { getEmergencyPauseContext, getProfile } from '@/lib/data';
 import { syncProgress } from '@/lib/actions';
 import { levelForXp } from '@/lib/calculations';
 import { isSupabaseConfigured } from '@/lib/supabase/server';
@@ -36,6 +37,13 @@ export default async function AppLayout({
 
   const xp = profile?.xp ?? 0;
   const { current, next, progressPct } = levelForXp(xp);
+
+  // Arm the pre-commitment gate only when it's enabled and has windows — the
+  // client decides moment-to-moment whether the clock is inside one. We pay for
+  // the extra reads only when the gate is actually configured.
+  const windows = profile?.high_risk_windows ?? [];
+  const gateArmed = (profile?.risk_gate_enabled ?? false) && windows.length > 0;
+  const gateContext = gateArmed ? await getEmergencyPauseContext() : null;
 
   return (
     <div className="app-bg min-h-screen">
@@ -75,6 +83,14 @@ export default async function AppLayout({
       <main className="mx-auto max-w-md px-4 pb-28 pt-4">{children}</main>
 
       <BottomNav />
+
+      {gateContext && (
+        <RiskGate
+          windows={windows}
+          supportPhone={profile?.support_phone ?? null}
+          {...gateContext}
+        />
+      )}
     </div>
   );
 }
