@@ -11,12 +11,14 @@ import {
   getUrgeLogs,
 } from '@/lib/data';
 import {
+  activeRiskWindow,
   behaviourModel,
   calculateBehaviouralRisk,
   calculateExposureRisk,
   calculateFinancialPosition,
   calculateInterventionLevel,
   dayKey,
+  futureSelfMessage,
   money,
   monthKey,
   opportunityBreakdown,
@@ -172,6 +174,18 @@ export default async function DashboardPage() {
       : model.stabilityIndex >= 40
         ? 'warn'
         : 'danger';
+
+  // Future Self contextual message (7.6) — high-risk / recovery / milestone.
+  const inHighRiskWindow = !!activeRiskWindow(
+    profile?.high_risk_windows ?? [],
+    now,
+  );
+  const future = futureSelfMessage({
+    inHighRiskWindow,
+    inRecovery: recovery.inRecovery,
+    streakDays: streak?.current_streak ?? 0,
+    date: now,
+  });
 
   return (
     <div className="space-y-5">
@@ -368,10 +382,14 @@ export default async function DashboardPage() {
             )}
             <div className="absolute inset-0 bg-gradient-to-t from-ink-950 via-ink-950/30 to-transparent" />
             <div className="absolute bottom-0 p-4">
-              <p className="text-sm font-medium text-white drop-shadow">
-                {profile?.future_self_caption ||
-                  'Your next gambling session costs progress toward this goal.'}
+              <p className="text-sm font-semibold text-white drop-shadow">
+                {profile?.future_self_caption || future.message}
               </p>
+              {profile?.future_self_caption && (
+                <p className="mt-1 text-xs text-white/85 drop-shadow">
+                  {future.message}
+                </p>
+              )}
             </div>
           </div>
         </Link>

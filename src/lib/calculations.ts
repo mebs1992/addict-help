@@ -6,6 +6,8 @@ import {
   BEHAVIOUR_RECENT_DAYS,
   BEHAVIOUR_WINDOW_DAYS,
   DAY_PARTS,
+  FUTURE_SELF_MESSAGES,
+  RECOVERY_MESSAGES,
   EXPOSURE_HIGH_CASH,
   EXPOSURE_HIGH_MONTHS,
   EXPOSURE_MODERATE_CASH,
@@ -566,19 +568,15 @@ export function money(value: number, cents = false): string {
   return (cents ? AUD_CENTS : AUD).format(Number.isFinite(value) ? value : 0);
 }
 
-/** First day of the month (YYYY-MM-01) for a given date, in local time. */
+/** First day of the month (YYYY-MM-01) for a given date, in APP_TIMEZONE. */
 export function monthKey(date: Date = new Date()): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  return `${y}-${m}-01`;
+  const p = zonedParts(date);
+  return `${p.year}-${String(p.month).padStart(2, '0')}-01`;
 }
 
-/** Calendar day (YYYY-MM-DD) for a given date, in local time. */
+/** Calendar day (YYYY-MM-DD) for a given date, in APP_TIMEZONE. */
 export function dayKey(date: Date = new Date()): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
+  return zonedDayKey(date);
 }
 
 // ---------------------------------------------------------------------------
@@ -927,4 +925,31 @@ export function rotatingMessage(messages: string[], date: Date = new Date()): st
   if (!messages.length) return '';
   const idx = Math.floor(date.getTime() / 86400000) % messages.length;
   return messages[idx];
+}
+
+export type FutureSelfKind = 'high_risk' | 'recovery' | 'milestone' | 'default';
+
+/**
+ * Future Self message (Feature 7.6). Picks the most relevant set for the moment
+ * — a high-risk window, recent slip, or approaching milestone — then rotates
+ * within it so the words stay fresh day to day.
+ */
+export function futureSelfMessage(ctx: {
+  inHighRiskWindow?: boolean;
+  inRecovery?: boolean;
+  streakDays?: number;
+  date?: Date;
+}): { kind: FutureSelfKind; message: string } {
+  const date = ctx.date ?? new Date();
+  if (ctx.inHighRiskWindow) {
+    return { kind: 'high_risk', message: rotatingMessage(FUTURE_SELF_MESSAGES.highRisk, date) };
+  }
+  if (ctx.inRecovery) {
+    return { kind: 'recovery', message: rotatingMessage(RECOVERY_MESSAGES, date) };
+  }
+  const upcoming = nextAchievement(ctx.streakDays ?? 0);
+  if (upcoming && upcoming.days - (ctx.streakDays ?? 0) <= 3) {
+    return { kind: 'milestone', message: rotatingMessage(FUTURE_SELF_MESSAGES.milestone, date) };
+  }
+  return { kind: 'default', message: rotatingMessage(FUTURE_SELF_MESSAGES.default, date) };
 }

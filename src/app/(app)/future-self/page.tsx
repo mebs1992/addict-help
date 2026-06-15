@@ -1,17 +1,40 @@
 import Image from 'next/image';
-import { getPrimaryGoal, getProfile } from '@/lib/data';
+import { getPrimaryGoal, getProfile, getStreak } from '@/lib/data';
 import { saveFutureSelf } from '@/lib/actions';
+import {
+  activeRiskWindow,
+  futureSelfMessage,
+  recoveryStatus,
+} from '@/lib/calculations';
 import { Banner } from '@/components/ui';
+
+const KIND: Record<string, { emoji: string; label: string }> = {
+  high_risk: { emoji: '🛑', label: 'A high-risk moment' },
+  recovery: { emoji: '🌱', label: 'Recovery' },
+  milestone: { emoji: '🏁', label: 'Almost there' },
+  default: { emoji: '💚', label: 'Your why' },
+};
 
 export default async function FutureSelfPage({
   searchParams,
 }: {
   searchParams: { saved?: string };
 }) {
-  const [profile, goal] = await Promise.all([getProfile(), getPrimaryGoal()]);
+  const [profile, goal, streak] = await Promise.all([
+    getProfile(),
+    getPrimaryGoal(),
+    getStreak(),
+  ]);
 
   const image = profile?.future_self_image_url || goal?.image_url || null;
   const caption = profile?.future_self_caption || '';
+
+  const recovery = recoveryStatus(streak?.last_gamble_date ?? null);
+  const future = futureSelfMessage({
+    inHighRiskWindow: !!activeRiskWindow(profile?.high_risk_windows ?? []),
+    inRecovery: recovery.inRecovery,
+    streakDays: streak?.current_streak ?? 0,
+  });
 
   return (
     <div className="space-y-5">
@@ -44,8 +67,11 @@ export default async function FutureSelfPage({
         </div>
       )}
 
-      <div className="rounded-2xl border border-brand-500/30 bg-brand-500/10 p-4 text-center text-brand-300">
-        Your next gambling session costs progress toward this goal.
+      <div className="rounded-2xl border border-brand-500/30 bg-brand-500/10 p-4 text-center text-brand-200">
+        <p className="text-xs uppercase tracking-wide text-brand-400/80">
+          {KIND[future.kind].emoji} {KIND[future.kind].label}
+        </p>
+        <p className="mt-1 text-base font-medium">{future.message}</p>
       </div>
 
       <form action={saveFutureSelf} className="card space-y-4">
