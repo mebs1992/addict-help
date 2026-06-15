@@ -3,6 +3,7 @@ import { getProfile } from '@/lib/data';
 import { levelForXp, money } from '@/lib/calculations';
 import { LEVELS } from '@/lib/constants';
 import { Banner, ProgressBar } from '@/components/ui';
+import { RiskGateSettings } from './RiskGateSettings';
 
 export default async function SettingsPage({
   searchParams,
@@ -130,6 +131,13 @@ export default async function SettingsPage({
 
         <button className="btn-primary w-full py-3">Save preferences</button>
       </form>
+
+      {/* Pre-commitment risk gate (Feature 7.1) */}
+      <RiskGateSettings
+        enabled={profile?.risk_gate_enabled ?? false}
+        supportPhone={profile?.support_phone ?? null}
+        windows={profile?.high_risk_windows ?? []}
+      />
 
       <p className="muted text-center text-xs">
         If gambling is putting you or your family at risk, please reach out for

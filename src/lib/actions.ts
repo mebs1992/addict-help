@@ -12,14 +12,60 @@ import {
   monthKey,
   streakFromLastGamble,
 } from './calculations';
-import { ACHIEVEMENTS, GUARDRAIL_SAFE_PCT, XP } from './constants';
-import type { GamblingSession } from './types';
+import {
+  ACHIEVEMENTS,
+  GUARDRAIL_SAFE_PCT,
+  URGE_TRIGGERS,
+  XP,
+} from './constants';
+import type {
+  GamblingSession,
+  HighRiskWindow,
+  RiskOutcome,
+  UrgeTrigger,
+} from './types';
 
 const USER_ID = PERSONAL_USER_ID;
 
 function num(v: FormDataEntryValue | null, fallback = 0): number {
   const n = parseFloat(String(v ?? ''));
   return Number.isFinite(n) ? n : fallback;
+}
+
+const TIME_RE = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+const URGE_TRIGGER_VALUES = new Set<UrgeTrigger>(
+  URGE_TRIGGERS.map((t) => t.value),
+);
+
+/** Coerce arbitrary parsed JSON into a clean, storable high-risk window list. */
+function sanitizeWindows(raw: unknown): HighRiskWindow[] {
+  if (!Array.isArray(raw)) return [];
+  const out: HighRiskWindow[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const w = item as Record<string, unknown>;
+    const start = String(w.start ?? '');
+    const end = String(w.end ?? '');
+    if (!TIME_RE.test(start) || !TIME_RE.test(end) || start === end) continue;
+    const days = Array.isArray(w.days)
+      ? Array.from(
+          new Set(
+            w.days
+              .map((d) => Number(d))
+              .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6),
+          ),
+        ).sort((a, b) => a - b)
+      : [];
+    out.push({
+      id: typeof w.id === 'string' && w.id ? w.id : crypto.randomUUID(),
+      label: (typeof w.label === 'string' ? w.label : '').trim().slice(0, 60),
+      days,
+      start,
+      end,
+    });
+    if (out.length >= 12) break; // generous cap, keeps the jsonb bounded
+  }
+  return out;
 }
 
 async function addXp(amount: number) {
@@ -345,6 +391,79 @@ export async function saveGoal(formData: FormData) {
 export async function recordEmergencyPause() {
   await addXp(XP.EMERGENCY_PAUSE_COMPLETED);
   revalidatePath('/dashboard');
+}
+
+// ---------------------------------------------------------------------------
+// Feature 7.4: Urge tracking — name the craving instead of acting on it.
+// Logging an urge (rather than gambling) is the win; we reward the honesty.
+// ---------------------------------------------------------------------------
+export async function logUrge(formData: FormData) {
+  const supabase = createClient();
+
+  const intensity = Math.max(0, Math.min(10, Math.round(num(formData.get('intensity')))));
+  const triggerRaw = (formData.get('trigger') as string) || '';
+  const trigger = URGE_TRIGGER_VALUES.has(triggerRaw as UrgeTrigger)
+    ? (triggerRaw as UrgeTrigger)
+    : null;
+  const note = ((formData.get('note') as string) || '').trim().slice(0, 500) || null;
+  // A slip records its own session; an urge log defaults to "rode it out".
+  const resisted = formData.get('resisted') !== 'false';
+
+  await supabase.from('urge_logs').insert({
+    user_id: USER_ID,
+    intensity,
+    trigger,
+    note,
+    resisted,
+  });
+
+  await addXp(XP.LOG_URGE);
+  revalidatePath('/', 'layout');
+  redirect('/urge?logged=1');
+}
+
+// ---------------------------------------------------------------------------
+// Feature 7.1: Pre-commitment risk gate — record what the person chose when the
+// gate fired. 'safe' earns a little XP; 'paused' flows into the Emergency Pause
+// (which awards its own XP on completion).
+// ---------------------------------------------------------------------------
+export async function recordRiskEvent(outcome: RiskOutcome) {
+  if (outcome !== 'safe' && outcome !== 'paused' && outcome !== 'support') return;
+  const supabase = createClient();
+  await supabase
+    .from('risk_events')
+    .insert({ user_id: USER_ID, outcome });
+  if (outcome === 'safe') await addXp(XP.RISK_GATE_SAFE);
+  revalidatePath('/', 'layout');
+}
+
+export async function saveRiskSettings(formData: FormData) {
+  const supabase = createClient();
+
+  const enabled = formData.get('risk_gate_enabled') === 'on';
+  const phone =
+    ((formData.get('support_phone') as string) || '').trim().slice(0, 40) ||
+    null;
+
+  let parsed: unknown = [];
+  try {
+    parsed = JSON.parse((formData.get('high_risk_windows') as string) || '[]');
+  } catch {
+    parsed = [];
+  }
+  const windows = sanitizeWindows(parsed);
+
+  await supabase
+    .from('profiles')
+    .update({
+      risk_gate_enabled: enabled,
+      support_phone: phone,
+      high_risk_windows: windows,
+    })
+    .eq('id', USER_ID);
+
+  revalidatePath('/', 'layout');
+  redirect('/settings?saved=1#risk-gate');
 }
 
 // ---------------------------------------------------------------------------

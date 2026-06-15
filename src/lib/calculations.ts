@@ -2,6 +2,7 @@
 
 import {
   ACHIEVEMENTS,
+  APP_TIMEZONE,
   EXPOSURE_HIGH_CASH,
   EXPOSURE_HIGH_MONTHS,
   EXPOSURE_MODERATE_CASH,
@@ -14,6 +15,7 @@ import {
   OPPORTUNITY_ITEMS,
   type OpportunityItem,
 } from './constants';
+import type { HighRiskWindow, UrgeTrigger } from './types';
 
 export interface Guardrails {
   /** Monthly take-home income. */
@@ -262,4 +264,135 @@ export function dayKey(date: Date = new Date()): string {
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
+}
+
+// ---------------------------------------------------------------------------
+// Timezone-aware helpers (Australia/Sydney by default).
+// `Date` arithmetic stays in UTC; these resolve the wall-clock day/time a user
+// actually sees, so the risk gate and any day-bucketing agree on "now".
+// ---------------------------------------------------------------------------
+export interface ZonedParts {
+  year: number;
+  month: number; // 1–12
+  day: number; // 1–31
+  hour: number; // 0–23
+  minute: number; // 0–59
+  weekday: number; // 0=Sun … 6=Sat
+}
+
+const WEEKDAY_INDEX: Record<string, number> = {
+  Sun: 0,
+  Mon: 1,
+  Tue: 2,
+  Wed: 3,
+  Thu: 4,
+  Fri: 5,
+  Sat: 6,
+};
+
+/** Wall-clock parts of `date` as seen in `timeZone`. */
+export function zonedParts(
+  date: Date = new Date(),
+  timeZone: string = APP_TIMEZONE,
+): ZonedParts {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    weekday: 'short',
+  }).formatToParts(date);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
+  // Some engines render midnight as "24" under hour12:false — normalise to 0.
+  let hour = parseInt(get('hour'), 10);
+  if (!Number.isFinite(hour) || hour === 24) hour = 0;
+  return {
+    year: parseInt(get('year'), 10),
+    month: parseInt(get('month'), 10),
+    day: parseInt(get('day'), 10),
+    hour,
+    minute: parseInt(get('minute'), 10) || 0,
+    weekday: WEEKDAY_INDEX[get('weekday')] ?? 0,
+  };
+}
+
+/** Calendar day (YYYY-MM-DD) in `timeZone`. */
+export function zonedDayKey(
+  date: Date = new Date(),
+  timeZone: string = APP_TIMEZONE,
+): string {
+  const p = zonedParts(date, timeZone);
+  return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
+}
+
+/** Parse "HH:MM" into minutes-since-midnight, or null if malformed. */
+function hhmmToMinutes(value: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec((value ?? '').trim());
+  if (!m) return null;
+  const h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  if (h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+
+/** Is the wall-clock moment `parts` inside this high-risk window? */
+export function isWithinWindow(window: HighRiskWindow, parts: ZonedParts): boolean {
+  const start = hhmmToMinutes(window.start);
+  const end = hhmmToMinutes(window.end);
+  if (start === null || end === null || start === end) return false;
+  const dayOk = !window.days?.length || window.days.includes(parts.weekday);
+  if (!dayOk) return false;
+  const now = parts.hour * 60 + parts.minute;
+  // start < end: same-day window. Otherwise it wraps past midnight.
+  return start < end ? now >= start && now < end : now >= start || now < end;
+}
+
+/** The first armed window covering `date`, or null if none is active. */
+export function activeRiskWindow(
+  windows: HighRiskWindow[],
+  date: Date = new Date(),
+  timeZone: string = APP_TIMEZONE,
+): HighRiskWindow | null {
+  if (!windows?.length) return null;
+  const parts = zonedParts(date, timeZone);
+  return windows.find((w) => isWithinWindow(w, parts)) ?? null;
+}
+
+export interface UrgeSummary {
+  count: number;
+  resisted: number;
+  avgIntensity: number;
+  topTrigger: UrgeTrigger | null;
+}
+
+/** Lightweight roll-up of recent urge logs for the urge dashboard. */
+export function summariseUrges(
+  logs: { intensity: number; trigger: UrgeTrigger | null; resisted: boolean }[],
+): UrgeSummary {
+  if (!logs.length) {
+    return { count: 0, resisted: 0, avgIntensity: 0, topTrigger: null };
+  }
+  const totalIntensity = logs.reduce((acc, l) => acc + (l.intensity || 0), 0);
+  const resisted = logs.filter((l) => l.resisted).length;
+  const counts = new Map<UrgeTrigger, number>();
+  for (const l of logs) {
+    if (l.trigger) counts.set(l.trigger, (counts.get(l.trigger) ?? 0) + 1);
+  }
+  let topTrigger: UrgeTrigger | null = null;
+  let best = 0;
+  for (const [trigger, n] of counts) {
+    if (n > best) {
+      best = n;
+      topTrigger = trigger;
+    }
+  }
+  return {
+    count: logs.length,
+    resisted,
+    avgIntensity: totalIntensity / logs.length,
+    topTrigger,
+  };
 }

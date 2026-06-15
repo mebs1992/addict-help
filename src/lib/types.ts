@@ -15,6 +15,30 @@ export type MoodValue =
 
 export type AccountabilityType = 'reason' | 'worst_loss' | 'cost';
 
+export type UrgeTrigger =
+  | 'stress'
+  | 'boredom'
+  | 'social'
+  | 'payday'
+  | 'habit'
+  | 'other';
+
+export type RiskOutcome = 'safe' | 'paused' | 'support';
+
+/**
+ * A user-defined high-risk time window that arms the pre-commitment gate.
+ * `days` is 0=Sun … 6=Sat; an empty array means "every day". Times are local
+ * "HH:MM" (resolved in APP_TIMEZONE). A window whose end is before its start
+ * wraps past midnight (e.g. 22:00 → 02:00).
+ */
+export interface HighRiskWindow {
+  id: string;
+  label: string;
+  days: number[];
+  start: string; // "HH:MM"
+  end: string; // "HH:MM"
+}
+
 export type ConsequenceCategory =
   | 'family_meal'
   | 'fuel'
@@ -38,6 +62,9 @@ export interface Profile {
   offset_balance: number | null;
   last_clean_checkin: string | null;
   consequence_mode: boolean;
+  risk_gate_enabled: boolean;
+  support_phone: string | null;
+  high_risk_windows: HighRiskWindow[];
   daily_vault_amount: number;
   future_self_image_url: string | null;
   future_self_caption: string | null;
@@ -101,6 +128,23 @@ export interface Streak {
   streak_start_date: string | null;
   vault_balance: number;
   updated_at: string;
+}
+
+export interface UrgeLog {
+  id: string;
+  user_id: string;
+  intensity: number; // 0–10
+  trigger: UrgeTrigger | null;
+  resisted: boolean;
+  note: string | null;
+  created_at: string;
+}
+
+export interface RiskEvent {
+  id: string;
+  user_id: string;
+  outcome: RiskOutcome;
+  created_at: string;
 }
 
 export interface AccountabilityEntry {

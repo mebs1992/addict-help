@@ -25,6 +25,9 @@ export function EmergencyPause({
   goalSaved,
   goalTarget,
   reasons,
+  open: openProp,
+  onOpenChange,
+  hideTrigger = false,
 }: {
   monthlyLosses: number;
   currentStreak: number;
@@ -32,8 +35,19 @@ export function EmergencyPause({
   goalSaved: number;
   goalTarget: number;
   reasons: string[];
+  /** Controlled open state. When provided, the component is driven externally. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Hide the built-in "I feel like gambling" trigger button. */
+  hideTrigger?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [openState, setOpenState] = useState(false);
+  const isControlled = openProp !== undefined;
+  const open = isControlled ? openProp : openState;
+  const setOpen = (next: boolean) => {
+    if (!isControlled) setOpenState(next);
+    onOpenChange?.(next);
+  };
   const [remaining, setRemaining] = useState(EMERGENCY_PAUSE_SECONDS);
   const [breath, setBreath] = useState(0);
   const recorded = useRef(false);
@@ -65,12 +79,14 @@ export function EmergencyPause({
 
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        className="btn w-full animate-pulse-ring bg-danger-600 py-4 text-base text-white hover:bg-danger-500"
-      >
-        🆘 I Feel Like Gambling
-      </button>
+      {!hideTrigger && (
+        <button
+          onClick={() => setOpen(true)}
+          className="btn w-full animate-pulse-ring bg-danger-600 py-4 text-base text-white hover:bg-danger-500"
+        >
+          🆘 I Feel Like Gambling
+        </button>
+      )}
 
       {open && (
         <div className="fixed inset-0 z-50 flex flex-col overflow-y-auto bg-ink-950/97 p-5 backdrop-blur">
