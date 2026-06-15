@@ -7,7 +7,7 @@ const ITEMS = [
   { href: '/dashboard', label: 'Home', icon: '🏠' },
   { href: '/reports', label: 'Reports', icon: '📊' },
   { href: '/check-in', label: 'Log', icon: '➕', center: true },
-  { href: '/streak', label: 'Streak', icon: '🔥' },
+  { href: '/streak', label: 'Recovery', icon: '🔥' },
   { href: '/settings', label: 'You', icon: '⚙️' },
 ];
 

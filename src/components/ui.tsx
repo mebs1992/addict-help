@@ -1,6 +1,22 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
+// Shared tone → explicit Tailwind class maps. Tailwind can't see dynamically
+// built class names, so every variant is spelled out here once and reused.
+export type Tone = 'brand' | 'warn' | 'danger';
+
+export const TONE_TEXT: Record<Tone, string> = {
+  brand: 'text-brand-400',
+  warn: 'text-warn-400',
+  danger: 'text-danger-400',
+};
+
+export const TONE_PILL: Record<Tone, string> = {
+  brand: 'bg-brand-500/20 text-brand-400',
+  warn: 'bg-warn-500/20 text-warn-400',
+  danger: 'bg-danger-500/20 text-danger-400',
+};
+
 export function StatCard({
   label,
   value,
@@ -89,6 +105,54 @@ export function Banner({
   return (
     <div className={`rounded-2xl border p-4 text-sm font-medium ${styles}`}>
       {children}
+    </div>
+  );
+}
+
+/**
+ * A single behavioural-risk dimension (financial position, exposure or
+ * behavioural risk) rendered as a card: a coloured band pill, a headline, a
+ * plain-language blurb and a concern meter (longer + redder = needs attention).
+ */
+export function RiskDimensionCard({
+  label,
+  headline,
+  band,
+  tone,
+  blurb,
+  barPct,
+  icon,
+  right,
+  footer,
+}: {
+  label: string;
+  headline: string;
+  band: string;
+  tone: Tone;
+  blurb: string;
+  barPct: number;
+  icon?: ReactNode;
+  right?: ReactNode;
+  footer?: ReactNode;
+}) {
+  return (
+    <div className="card">
+      <div className="flex items-center justify-between">
+        <p className="muted">{label}</p>
+        <span className={`pill ${TONE_PILL[tone]}`}>{band}</span>
+      </div>
+      <div className="mt-2 flex items-end justify-between gap-3">
+        <p className={`text-2xl font-bold ${TONE_TEXT[tone]}`}>
+          {icon ? <span className="mr-1.5">{icon}</span> : null}
+          {headline}
+        </p>
+        {right}
+      </div>
+      <div className="mt-3">
+        <ProgressBar pct={barPct} tone={tone} />
+      </div>
+      <p className="muted mt-2">{blurb}</p>
+      {footer}
     </div>
   );
 }

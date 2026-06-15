@@ -19,8 +19,10 @@ export default async function StreakPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-bold">Your streak 🔥</h1>
-        <p className="muted mt-1">Every clean day is a brick in the wall.</p>
+        <h1 className="text-2xl font-bold">Days since &amp; milestones 🔥</h1>
+        <p className="muted mt-1">
+          Rewarding recovery, not perfection — every day back counts.
+        </p>
       </div>
 
       {recovery.inRecovery && (
@@ -38,12 +40,12 @@ export default async function StreakPage() {
       <div className="card flex items-center justify-around text-center">
         <div>
           <p className="text-5xl font-bold text-brand-400">{current}</p>
-          <p className="muted">current days</p>
+          <p className="muted">days since last session</p>
         </div>
         <div className="h-12 w-px bg-white/10" />
         <div>
           <p className="text-5xl font-bold">{longest}</p>
-          <p className="muted">longest days</p>
+          <p className="muted">longest run</p>
         </div>
       </div>
 

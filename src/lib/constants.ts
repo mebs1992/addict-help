@@ -1,27 +1,116 @@
-import type { ConsequenceCategory, MoodValue, UrgeTrigger } from './types';
+import type {
+  ConsequenceCategory,
+  FinancialPositionLevel,
+  ImpactLevel,
+  InterventionLevel,
+  MoodValue,
+  RiskBand,
+  UrgeTrigger,
+} from './types';
 
 // The single timezone all "what day / what time is it" decisions resolve to.
 // Storage stays in UTC; day boundaries and the risk-gate clock derive from this
 // so a late-night session never lands on the wrong calendar day.
 export const APP_TIMEZONE = 'Australia/Sydney';
 
-// Tiered monthly spending guardrails, as a % of disposable income (monthly
-// take-home income minus essential expenses). Spend at or below the safe limit
-// is "green"; above the ceiling is clearly harmful ("red"); in between is
-// "caution". The whole budget setup is derived from these two numbers, the
-// person's monthly income and their monthly expenses.
-export const GUARDRAIL_SAFE_PCT = 1; // green ceiling — a low-risk limit
-export const GUARDRAIL_CEILING_PCT = 3; // red ceiling — clear harm above this
+// DEPRECATED (Redesign v2.0): tiered "safe limit" / "hard ceiling" as a % of
+// disposable income. These resembled a gambling allowance, so they no longer
+// drive any UI — kept only for migration compatibility with persisted
+// monthly_budgets rows. The behavioural risk engine below replaces them.
+export const GUARDRAIL_SAFE_PCT = 1; // deprecated — was the green "safe limit"
+export const GUARDRAIL_CEILING_PCT = 3; // deprecated — was the red "ceiling"
 
-// Exposure risk: accessible cash (spendings + savings) measured in months of
-// disposable income. The more reachable cash, the more a single bad night can
-// destroy — so a big accessible balance relative to spare income reads as
-// higher exposure.
-export const EXPOSURE_MODERATE_MONTHS = 2;
-export const EXPOSURE_HIGH_MONTHS = 6;
-// Absolute fallbacks (in dollars) when disposable income is unknown / zero.
+// Absolute exposure fallbacks (in dollars) used when monthly surplus is unknown
+// or zero and a months-of-surplus ratio can't be computed.
 export const EXPOSURE_MODERATE_CASH = 2000;
 export const EXPOSURE_HIGH_CASH = 10000;
+
+// DEPRECATED exposure thresholds (old 2/6-months-of-disposable model). The v2
+// engine uses EXPOSURE_MONTHS_MODERATE / EXPOSURE_MONTHS_HIGH below.
+export const EXPOSURE_MODERATE_MONTHS = 2;
+export const EXPOSURE_HIGH_MONTHS = 6;
+
+// ---------------------------------------------------------------------------
+// Behavioural Risk Engine (Redesign v2.0). Three independent dimensions —
+// financial position, exposure risk and behavioural risk — replace the old
+// gambling-allowance guardrails. The app no longer answers "how much can I
+// safely gamble"; it answers "how resilient / exposed / vulnerable am I, and
+// what does this decision mean?". See calculations.ts for the engine itself.
+// ---------------------------------------------------------------------------
+
+// Dimension 1 — Financial Position. Monthly surplus (income − expenses) as a
+// share of expenses: a buffer worth half your costs is Strong, a fifth is
+// Stable, anything less is Fragile.
+export const FINANCIAL_STRONG_RATIO = 0.5;
+export const FINANCIAL_STABLE_RATIO = 0.2;
+
+// Dimension 2 — Exposure Risk. Accessible cash (spendings + savings) measured
+// in months of monthly surplus: under one month is Low, one-to-three Moderate,
+// beyond three High.
+export const EXPOSURE_MONTHS_MODERATE = 1; // ≥ this many months → at least moderate
+export const EXPOSURE_MONTHS_HIGH = 3; // > this many months → high
+
+// Dimension 3 — Behavioural Risk. "Recent" lookback for sessions and urges, and
+// the urge intensities that escalate the score.
+export const BEHAVIOUR_RECENT_DAYS = 7;
+export const URGE_INTENSITY_HIGH = 7; // intense / escalating cravings
+export const URGE_INTENSITY_MODERATE = 4;
+
+// Impact Analysis — a gamble amount as a share of monthly surplus. States what
+// a spend *means*; never whether it is "allowed".
+export const IMPACT_LOW_PCT = 2; // < 2% of surplus
+export const IMPACT_MODERATE_PCT = 10; // 2–10%
+export const IMPACT_HIGH_PCT = 20; // 10–20%; above this is severe
+
+// Human-readable labels + blurbs for the engine. Tone/colour classes live in
+// the components (Tailwind can't see dynamically-built class names).
+export const FINANCIAL_POSITION_LABELS: Record<FinancialPositionLevel, string> = {
+  strong: 'Strong',
+  stable: 'Stable',
+  fragile: 'Fragile',
+};
+
+export const FINANCIAL_POSITION_BLURBS: Record<FinancialPositionLevel, string> = {
+  strong:
+    'You have a healthy buffer between income and essentials — you could absorb a financial setback.',
+  stable:
+    'You have some room between income and essentials, but the buffer is modest.',
+  fragile:
+    'There is little or no room between your income and essentials. A setback would bite hard.',
+};
+
+export const RISK_BAND_LABELS: Record<RiskBand, string> = {
+  low: 'Low',
+  moderate: 'Moderate',
+  high: 'High',
+};
+
+export const EXPOSURE_BLURBS: Record<RiskBand, string> = {
+  low: 'Little cash sits within easy reach — your downside is contained. Keep it that way.',
+  moderate:
+    'A meaningful amount of cash is within easy reach. Parking spare savings in your offset keeps it out of one-tap range.',
+  high: 'A lot of cash is within easy reach, so a single bad moment could do real damage. Moving spare savings into your offset makes it far harder to touch.',
+};
+
+export const BEHAVIOURAL_RISK_BLURBS: Record<RiskBand, string> = {
+  low: 'No recent gambling and steady urges. You are in a stable stretch.',
+  moderate:
+    'Some recent urges or an isolated session. Worth staying deliberate right now.',
+  high: 'Recent activity and rising urges. This is a vulnerable window — lean on your supports.',
+};
+
+export const IMPACT_LABELS: Record<ImpactLevel, string> = {
+  low: 'Low impact',
+  moderate: 'Moderate impact',
+  high: 'High impact',
+  severe: 'Severe impact',
+};
+
+export const INTERVENTION_LABELS: Record<InterventionLevel, string> = {
+  minimal: 'Minimal intervention',
+  reflection: 'Reflection + friction',
+  maximum: 'Maximum intervention',
+};
 
 // Fallback hourly wage used when a user hasn't set income details yet.
 export const DEFAULT_HOURLY_WAGE = 25;
